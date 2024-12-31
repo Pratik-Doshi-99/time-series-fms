@@ -1,1 +1,1 @@
-# time-series-fms
+# Foundation Models for Time Series Forecasting
