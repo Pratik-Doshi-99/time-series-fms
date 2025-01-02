@@ -18,13 +18,37 @@ class TestData(unittest.TestCase):
         self.assertEqual(len(series), 100)
         self.assertTrue(isinstance(series, np.ndarray))
 
+    # -----------------------------------------------------------------------------------
+    # NEW TEST: Edge case - length=1
+    # -----------------------------------------------------------------------------------
+    def test_generate_time_series_length_one(self):
+        series = generate_time_series(length=1, drift=0.1, cycle_amplitude=1.0, noise_std=0.2, trend_slope=0.05, frequency=2.0, bias=10.0)
+        self.assertEqual(len(series), 1, "Series of length=1 should have exactly 1 data point")
+        self.assertTrue(isinstance(series, np.ndarray))
+
+    # -----------------------------------------------------------------------------------
+    # NEW TEST: Constant series (no drift, amplitude, noise, slope)
+    # -----------------------------------------------------------------------------------
+    def test_constant_series_quantization_dequantization(self):
+        # Generate a constant series
+        series = np.full(50, 5.0)  # all 5.0
+        preprocessor = TSPreprocessor(num_classes=100, add_bos=False, add_eos=False)
+        tensor, metadata = preprocessor.preprocess_series(series)
+        # Dequantize
+        dequantized_series = preprocessor.dequantize_series(tensor.numpy(), metadata)
+
+        # Check we didn't produce NaNs or anything weird
+        self.assertFalse(np.isnan(dequantized_series).any(), "Dequantized constant series should not contain NaNs.")
+
+        # The difference should be minimal because it's constant
+        # Tolerance can be quite low, e.g., 0.001 if truly constant
+        self.assertTrue(np.allclose(series, dequantized_series, atol=0.001),
+                        "Dequantized constant series should closely match the original.")
+
+    # The rest of your original tests below...
+    # -----------------------------------------------------------------------------------
     # def test_quantization_visualization(self):
-    #     series = generate_time_series(length=100, drift=0.1, cycle_amplitude=1.0, noise_std=0.2, trend_slope=0.05, frequency=2.0, bias=10.0)
-    #     preprocessor = TSPreprocessor(num_classes=100, add_bos=False, add_eos=False)
-    #     tensor, metadata = preprocessor.preprocess_series(series)
-        
-    #     self.assertTrue(isinstance(tensor, torch.Tensor))
-    #     self.assertTrue("min_val" in metadata and "max_val" in metadata)
+    #     ...
 
     def test_quantization_dequantization_visualization(self):
         series = generate_time_series(length=100, drift=0.1, cycle_amplitude=1.0, noise_std=0.2, trend_slope=0.05, frequency=2.0, bias=10.0)
@@ -58,14 +82,13 @@ class TestData(unittest.TestCase):
         self.assertTrue(isinstance(tensor, torch.Tensor))
         self.assertTrue("min_val" in metadata and "max_val" in metadata)
 
-
     def test_quantization_visualization(self):
         series = generate_time_series(length=100, drift=0.1, cycle_amplitude=1.0, noise_std=0.2, trend_slope=0.05, frequency=2.0, bias=10.0)
         preprocessor = TSPreprocessor(num_classes=100, add_bos=False, add_eos=False)
         tensor, metadata = preprocessor.preprocess_series(series)
 
         # Dequantize using the new function
-        dequantized_series = preprocessor.dequantize_series(tensor.numpy(), metadata)
+        dequantized_series = preprocessor.dequantize_series(tensor, metadata)
 
         # Plot the raw and dequantized series
         plt.figure(figsize=(12, 6))
@@ -90,15 +113,6 @@ class TestData(unittest.TestCase):
         # Dequantize and compare
         dequantized_series = preprocessor.dequantize_series(tensor.numpy(), metadata)
         self.assertTrue(np.allclose(series, dequantized_series, atol=0.1))
-
-    # discontinuing bos and eos tokens
-    # def test_bos_eos_tokens(self):
-    #     series = generate_time_series(length=100, drift=0.1, cycle_amplitude=1.0, noise_std=0.2, trend_slope=0.05, frequency=2.0, bias=10.0)
-    #     preprocessor = TSPreprocessor(num_classes=100, add_bos=True, add_eos=True)
-    #     tensor, _ = preprocessor.preprocess_series(series)
-        
-    #     self.assertEqual(tensor[0].item(), TSPreprocessor.BOS_TOKEN)
-    #     self.assertEqual(tensor[-1].item(), TSPreprocessor.EOS_TOKEN)
 
     def test_file_saving(self):
         # Generate 1000 mock time series
@@ -145,34 +159,40 @@ class TestData(unittest.TestCase):
             self.assertTrue(isinstance(y, torch.Tensor))
             self.assertTrue(isinstance(attn_mask, torch.Tensor))
             self.assertTrue(isinstance(padding_mask, torch.Tensor))
-    
+
+    # -----------------------------------------------------------------------------------
+    # NEW TEST: Non-existent file for MultiTimeSeriesDataset
+    # -----------------------------------------------------------------------------------
+    def test_non_existent_file(self):
+        with self.assertRaises(FileNotFoundError):
+            MultiTimeSeriesDataset(tensor_file_path="non_existent_file.pt", max_training_length=32)
+
     def test_attention_masks(self):
         dataset = MultiTimeSeriesDataset(tensor_file_path="test_preprocessed_data.pt", max_training_length=32)
         loader = AutoregressiveLoader(dataset, batch_size=4)
-        print('Length of loader',len(loader))
         i = 0
         for x, y, attn_mask, padding_mask in loader:
             i += 1
-            #print(i)
-            # Check attention mask properties
             max_len = x.size(1)
             self.assertEqual(attn_mask.size(), (max_len, max_len), "Attention mask dimensions are incorrect.")
-            #print('Expected\n',torch.triu(torch.ones((max_len, max_len))).bool().float())
-            #print('Actual\n',attn_mask.float(),'\n\n\n\n')
-            # Ensure upper triangle is False (not ignored), lower triangle is True (ignored)
-            self.assertTrue(torch.allclose(attn_mask.float(), (~torch.triu(torch.ones((max_len, max_len))).bool()).float()),
-                            "Attention mask does not have correct triangular structure.")
+            self.assertTrue(
+                torch.allclose(
+                    attn_mask.float(), 
+                    (~torch.triu(torch.ones((max_len, max_len))).bool()).float()
+                ),
+                "Attention mask does not have correct triangular structure."
+            )
 
-            # Check padding mask properties
             self.assertEqual(padding_mask.size(), (x.size(0), x.size(1)), "Padding mask dimensions are incorrect.")
 
-            # Verify padding mask correctly identifies padding tokens
-            for i in range(x.size(0)):  # Batch size
-                for j in range(x.size(1)):  # Sequence length
-                    if x[i, j, 0].item() == TSPreprocessor.PAD_TOKEN:  # Assuming 3rd dim is placeholder
-                        self.assertTrue(padding_mask[i, j].item(), "Padding mask should be True for PAD_TOKEN.")
+            # If you are using x of shape [batch_size, seq_len], then you won't have x[i, j, 0].
+            # Adjust your check accordingly. For example:
+            for b_idx in range(x.size(0)):  # batch size
+                for s_idx in range(x.size(1)):  # sequence length
+                    if x[b_idx, s_idx].item() == TSPreprocessor.PAD_TOKEN:
+                        self.assertTrue(padding_mask[b_idx, s_idx].item(), "Padding mask should be True for PAD_TOKEN.")
                     else:
-                        self.assertFalse(padding_mask[i, j].item(), "Padding mask should be False for non-PAD_TOKEN.")
+                        self.assertFalse(padding_mask[b_idx, s_idx].item(), "Padding mask should be False for non-PAD_TOKEN.")
 
 
 if __name__ == "__main__":
