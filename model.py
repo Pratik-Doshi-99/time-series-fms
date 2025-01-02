@@ -56,7 +56,7 @@ class DecoderOnlyTransformer(nn.Module):
         x = self.embedding(x)  # [batch_size, seq_len, model_dim]
         # Add positional encoding
         x = self.pos_encoding(x)
-        print(f'Pre Transformer Shapes: x={x.shape}, attn_mask={attn_mask.shape}, padding_mask={padding_mask.shape}')
+        #print(f'Pre Transformer Shapes: x={x.shape}, attn_mask={attn_mask.shape}, padding_mask={padding_mask.shape}')
         # Pass through each Transformer Decoder layer
         for layer in self.layers:
             x = layer(
