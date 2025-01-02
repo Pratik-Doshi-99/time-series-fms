@@ -1,8 +1,17 @@
+# train.py
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
 
-def train_model(model, train_loader, epochs, device):
+def train_model(model, train_loader, epochs, device, train_mode="incremental"):
+    """
+    train_mode can be 'incremental' or 'multi-step'.
+    'incremental':  Each batch is from AutoregressiveLoader, 
+                    we only look at model output at the last time step.
+    'multi-step':   Each batch is from MultiStepLoader, 
+                    we compute cross-entropy over entire sequence.
+    """
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.CrossEntropyLoss()
@@ -10,13 +19,43 @@ def train_model(model, train_loader, epochs, device):
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
+
         for x, y, attn_mask, padding_mask in train_loader:
-            x, y = x.to(device), y.to(device)
-            attn_mask, padding_mask = attn_mask.to(device), padding_mask.to(device)
+            # x,y shapes can differ depending on the loader
+            x = x.to(device)
+            y = y.to(device)
+            attn_mask = attn_mask.to(device)
+            padding_mask = padding_mask.to(device)
 
             optimizer.zero_grad()
+
             output = model(x, attn_mask=attn_mask, padding_mask=padding_mask)
-            loss = criterion(output, y)
+            # output shape: [batch_size, seq_len, quantized_classes]
+
+            if train_mode == "incremental":
+                # Here, y is [batch_size, seq_len], but typically seq_len=1
+                # or we only want the "last token" from the output
+                # Let's assume y is shape [batch_size, 1], so we do:
+                # output[:, -1, :] => shape [batch_size, quantized_classes]
+                # target => shape [batch_size], so we squeeze if needed
+                # But your existing code might pad it. We'll adapt:
+
+                # If y has shape [batch_size, seq_len], we use the last step
+                # (the second dimension might be > 1 if padded)
+                last_logits = output[:, -1, :]   # [batch_size, num_classes]
+                last_target = y[:, -1]          # [batch_size]
+                
+                loss = criterion(last_logits, last_target)
+
+            elif train_mode == "multi-step":
+                # We want to compute cross-entropy across ALL positions
+                # output: [batch_size, seq_len, classes]
+                # y:      [batch_size, seq_len]
+                # CrossEntropyLoss expects [batch_size, classes, seq_len], so we transpose:
+                logits = output.transpose(1, 2)   # => [batch_size, classes, seq_len]
+                # Also ensure y is shape [batch_size, seq_len]
+                loss = criterion(logits, y)
+
             loss.backward()
             optimizer.step()
 
@@ -24,45 +63,7 @@ def train_model(model, train_loader, epochs, device):
 
         print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss / len(train_loader)}")
 
-def train_model_multi_gpu(model, train_loader, epochs):
+def train_model_multi_gpu(model, train_loader, epochs, train_mode="incremental"):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = nn.DataParallel(model)
-    train_model(model, train_loader, epochs, device)
-
-## main.py ##
-from data import generate_time_series, TSPreprocessor, MultiTimeSeriesDataset, AutoregressiveLoader
-from model import DecoderOnlyTransformer
-from train import train_model_multi_gpu
-import random
-
-if __name__ == "__main__":
-    num_series = 100
-    series_length = 500
-    max_training_length = 1024
-    num_classes = 100
-
-    series_list = [generate_time_series(series_length, drift=random.uniform(0, 0.2),
-                                        cycle_amplitude=random.uniform(0.5, 1.5),
-                                        noise_std=random.uniform(0.1, 0.3),
-                                        trend_slope=random.uniform(0, 0.05),
-                                        frequency=random.uniform(0.5, 2.0),
-                                        bias=random.uniform(-10, 10)) for _ in range(num_series)]
-
-    preprocessor = TSPreprocessor(num_classes=num_classes, add_bos=True, add_eos=True)
-    preprocessed_tensors = []
-    metadata = []
-
-    for series in series_list:
-        tensor, meta = preprocessor.preprocess_series(series)
-        preprocessed_tensors.append(tensor)
-        metadata.append(meta)
-
-    preprocessor.save_preprocessed(preprocessed_tensors, metadata, "preprocessed_data.pt")
-
-    dataset = MultiTimeSeriesDataset(tensor_file_path="preprocessed_data.pt", max_training_length=max_training_length)
-    train_loader = AutoregressiveLoader(dataset, batch_size=16)
-
-    model = DecoderOnlyTransformer(num_layers=4, model_dim=64, num_heads=4, hidden_dim=128)
-
-    print("Training model:")
-    train_model_multi_gpu(model, train_loader, epochs=10)
+    train_model(model, train_loader, epochs, device, train_mode=train_mode)
