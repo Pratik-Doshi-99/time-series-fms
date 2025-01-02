@@ -189,7 +189,7 @@ class TestData(unittest.TestCase):
             # Adjust your check accordingly. For example:
             for b_idx in range(x.size(0)):  # batch size
                 for s_idx in range(x.size(1)):  # sequence length
-                    if x[b_idx, s_idx].item() == TSPreprocessor.PAD_TOKEN:
+                    if x[b_idx, s_idx].item() == dataset.preprocessor.PAD_TOKEN:
                         self.assertTrue(padding_mask[b_idx, s_idx].item(), "Padding mask should be True for PAD_TOKEN.")
                     else:
                         self.assertFalse(padding_mask[b_idx, s_idx].item(), "Padding mask should be False for non-PAD_TOKEN.")
