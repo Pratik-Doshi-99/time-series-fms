@@ -1,106 +1,91 @@
 # Foundation Models for Time Series Forecasting
 
-
 This repository provides a **decoder-only Transformer** for modeling **quantized time-series data**. It includes:
 
-- **Data preprocessing** (normalization, quantization, and special tokens)
-- **Two training paradigms**: *incremental* vs. *multi-step*
-- **A Transformer-based model** (decoder-only) with **positional encoding**
+- **Data preprocessing** (normalization, quantization, and special tokens)  
+- **Two training paradigms**: incremental vs. multi-step  
+- **A Transformer-based model** (decoder-only) with **positional encoding**  
 - **Scripts** to **train** the model and **test** its components
 
 ## Table of Contents
 
-1. [Data Preprocessing](#data-preprocessing)
-   - [Normalization](#normalization)
-   - [Quantization](#quantization)
-   - [Special Tokens](#special-tokens)
-2. [Training Approaches](#training-approaches)
-   - [Incremental (Prefix) Approach](#incremental-prefix-approach)
-   - [Multi-Step Approach](#multi-step-approach)
-3. [Model Architecture](#model-architecture)
-   - [Decoder-Only Transformer](#decoder-only-transformer)
-   - [Positional Encoding](#positional-encoding)
-4. [Running the Training Code](#running-the-training-code)
+1. [Data Preprocessing](#data-preprocessing)  
+   - [Normalization](#normalization)  
+   - [Quantization](#quantization)  
+   - [Special Tokens](#special-tokens)  
+2. [Training Approaches](#training-approaches)  
+   - [Incremental (Prefix) Approach](#incremental-prefix-approach)  
+   - [Multi-Step Approach](#multi-step-approach)  
+3. [Model Architecture](#model-architecture)  
+   - [Decoder-Only Transformer](#decoder-only-transformer)  
+   - [Positional Encoding](#positional-encoding)  
+4. [Running the Training Code](#running-the-training-code)  
 5. [Running Unit Tests](#running-unit-tests)
 
 ---
 
 ## Data Preprocessing
 
-All data preprocessing steps are handled by the **`TSPreprocessor`** in `data.py`. The major steps are **normalization**, **quantization**, and **special token** insertion (optionally).
+All data preprocessing steps are handled by the **`TSPreprocessor`** in `data.py`. The major steps are **normalization**, **quantization**, and optionally inserting **special tokens**.
 
 ### Normalization
 
-Given a raw time-series \(\mathbf{x}\) of length \(T\), we first normalize it into the range \([0, 1]\) by computing:
+Given a raw time series `x` of length `T`, we first normalize it into the range [0, 1] by computing:
 
-\[
-\text{normalized}_t \;=\; \frac{x_t - \min(\mathbf{x})}{\max(\mathbf{x}) \;-\; \min(\mathbf{x})}
-\]
+- normalized_value = (original_value - min_x) / (max_x - min_x)
 
-If \(\max(\mathbf{x}) = \min(\mathbf{x})\) (i.e., the series is constant), we simply assign all values to \(0\).
+where `min_x` and `max_x` are the minimum and maximum of the entire series.  
+If `(max_x == min_x)`, meaning the series is constant, we assign everything to zero.
 
 ### Quantization
 
-After normalization, each time step is mapped into **integer bins** in the range \([0,\dots,\text{num\_classes}-1]\). Suppose:
+After normalization, each time step is mapped into integer bins in the range `[0, ..., num_classes - 1]`. For example, if `num_classes = 100`, the valid data bins are `[0..99]`.  
+We do the following:
 
-- \(\text{range\_min} = 0\)
-- \(\text{range\_max} = \text{num\_classes}-1\)
+1. Multiply the normalized value by `(range_max - range_min)`.  
+2. Round to the nearest integer.  
+3. Clip to ensure the result is within `[range_min..range_max]`.
 
-Then each normalized value \(\text{normalized}_t \in [0,1]\) is **scaled** and **rounded**:
-
-\[
-\text{quantized}_t \;=\; \text{round}\!\bigl(\text{normalized}_t \cdot (\text{range\_max} - \text{range\_min})\bigr)
-\]
-\[
-\text{quantized}_t \;=\; \max(\text{range\_min},\; \min(\text{quantized}_t,\; \text{range\_max}))
-\]
-
-Hence all raw values end up as integers in \([0..(\text{num\_classes}-1)]\).
+Hence, all raw values end up as integers in `[0..(num_classes - 1)]`.
 
 ### Special Tokens
 
 We insert the following **optional** tokens:
 
-- **BOS_TOKEN**: Denotes the beginning of sequence  
-- **EOS_TOKEN**: Denotes the end of sequence  
-- **PAD_TOKEN**: Used for **padding** sequences to match lengths in a batch  
+- **BOS_TOKEN** (Beginning of Sequence)  
+- **EOS_TOKEN** (End of Sequence)  
+- **PAD_TOKEN** (Padding Token)  
 
-These are **instance-level** in `TSPreprocessor` and set to:
-```
-BOS_TOKEN = num_classes
-EOS_TOKEN = num_classes + 1
-PAD_TOKEN = num_classes + 2
-```
-This ensures they do not overlap with the valid data range \([0..(\text{num\_classes}-1)]\).
+These tokens are **instance-level** in `TSPreprocessor` and automatically set to `num_classes`, `num_classes + 1`, and `num_classes + 2`, respectively. This ensures they do not overlap with valid data bins in `[0..(num_classes-1)]`.
 
 ---
 
 ## Training Approaches
 
-There are **two** ways to train the model on the time-series:
+There are two ways to train the model on your time-series:
 
 1. **Incremental (Prefix) Approach**  
 2. **Multi-Step Approach**
 
 ### Incremental (Prefix) Approach
 
-In the **incremental** approach (often called prefix-based), each prefix of a sequence is treated as a separate sample. For a sequence \(\{x_1,\dots,x_T\}\), we generate:
+In this approach, each prefix of a sequence is treated as a separate sample. For a sequence `[x1, x2, ..., xT]`, we generate:
 
-1. \(\mathbf{X} = [x_1]\), \(\mathbf{Y} = [x_2]\)  
-2. \(\mathbf{X} = [x_1,\, x_2]\), \(\mathbf{Y} = [x_3]\)  
-3. \(\dots\)  
-4. \(\mathbf{X} = [x_1,\dots,x_{T-1}]\), \(\mathbf{Y} = [x_T]\)
+1. X = [x1], Y = [x2]  
+2. X = [x1, x2], Y = [x3]  
+3. ...  
+4. X = [x1, x2, ..., x(T-1)], Y = [xT]
 
-These many (X, Y) pairs get batched in the **`AutoregressiveLoader`**, which builds an **autoregressive mask** for each prefix so the model only attends to past tokens. During training, the loss is typically computed **only** on the **last token** in each prefix (i.e., *one-step-ahead* prediction).
+These pairs get batched in the **`AutoregressiveLoader`**, which also builds an autoregressive (causal) mask for each prefix so the model only attends to past tokens. During training, the loss is computed only on the last token in each prefix.
 
 ### Multi-Step Approach
 
-In the **multi-step** approach, each entire sequence is loaded in a single pass. For a given sequence \(\{x_1,\dots,x_T\}\), we create:
+In the multi-step approach, each entire sequence is used in a single pass. For a sequence `[x1, x2, ..., xT]`, we define:
 
-- \(\mathbf{X} = [x_1,\, x_2,\, \dots,\, x_{T-1}]\)  
-- \(\mathbf{Y} = [x_2,\, x_3,\, \dots,\, x_T]\)
+- X = [x1, x2, ..., x(T-1)]  
+- Y = [x2, x3, ..., xT]  
 
-Then a **causal mask** ensures the model does **not** attend to future tokens. We compute the cross-entropy loss over **all time steps** in the sequence. This is a classic teacher-forcing approach: the model learns to predict **each** next token in a single forward pass.
+A causal mask ensures that future tokens cannot be seen at each time step. We then compute the cross-entropy loss over **all** time steps in the sequence. This is sometimes called “teacher forcing,” since the model learns to predict each next token in one forward pass.
 
 ---
 
@@ -108,28 +93,21 @@ Then a **causal mask** ensures the model does **not** attend to future tokens. W
 
 ### Decoder-Only Transformer
 
-We use a **decoder-only** architecture, akin to GPT-style language models, defined in **`model.py`**:
+We use a **decoder-only** architecture, similar to GPT-style language models. In `model.py`:
 
-1. **Embedding**: An `nn.Embedding(quantized_classes, model_dim)` that maps each token (integer ID) to a `model_dim`-sized embedding vector.  
-2. **Positional Encoding**: We add a standard sine/cosine positional encoding to each embedding.  
-3. **Stack of Decoder Layers** (`nn.TransformerDecoderLayer`):  
-   - Each layer has self-attention + feedforward + layer norms (with residual connections *inside*).  
-   - We pass `memory=None` for a pure decoder.  
-4. **Output Projection**: A `Linear(model_dim, quantized_classes)` that produces logits over all possible classes.
+- **Embedding**: `nn.Embedding(quantized_classes, model_dim)` maps each integer token to a vector.  
+- **Positional Encoding**: We add a sine/cosine positional encoding to each embedding.  
+- **Stack of Decoder Layers**: Each layer is an `nn.TransformerDecoderLayer` with self-attention and feedforward components.  
+- **Output Projection**: A linear layer maps the final hidden states to logits over `quantized_classes`.
 
 ### Positional Encoding
 
-We use the **standard sine/cosine** positional encoding:
+We follow the standard sine/cosine approach, commonly used in the original "Attention Is All You Need" paper. For each position `pos` in `[0..seq_len-1]` and embedding dimension index `i`:
 
-\[
-\text{PE}(pos,\,2i) = \sin\!\bigl(\frac{pos}{10000^{\,\frac{2i}{d}}}\bigr),
-\quad
-\text{PE}(pos,\,2i+1) = \cos\!\bigl(\frac{pos}{10000^{\,\frac{2i}{d}}}\bigr)
-\]
-- \(pos\) is the token position \(\{0,1,\dots\}\)
-- \(i\) indexes the embedding dimension
-- \(d\) is the embedding size
-- We add this vector to the embedding for each position
+- PE(pos, 2i)   = sin( pos / (10000^(2i/d)) )  
+- PE(pos, 2i+1) = cos( pos / (10000^(2i/d)) )
+
+These values are added to the embedded tokens before they enter the Transformer layers.
 
 ---
 
@@ -138,48 +116,48 @@ We use the **standard sine/cosine** positional encoding:
 1. **Install Dependencies**  
    - Python 3.8+  
    - PyTorch (1.9+ recommended)  
-   - NumPy, Matplotlib (for some optional plots)
+   - NumPy, Matplotlib (for optional plotting)
 
-2. **Generate / Preprocess Data** + **Run Training**  
-   - The main training entry point is **`main.py`**. By default, it:
-     1. Synthesizes time-series data (`generate_time_series`)
-     2. Preprocesses (normalizes/quantizes) them
-     3. Saves them to `preprocessed_data.pt`
-     4. Creates a `MultiTimeSeriesDataset`
-     5. Either uses the **incremental** `AutoregressiveLoader` or **multi-step** loader to form batches
-     6. Builds the **decoder-only transformer** model
-     7. Trains for a set number of epochs
+2. **Train the Model**  
+   - The main entry point is **`main.py`**. By default, it does the following:
+     1. Synthesizes time-series data with `generate_time_series`.  
+     2. Preprocesses (normalizes + quantizes) them and saves to `preprocessed_data.pt`.  
+     3. Creates a `MultiTimeSeriesDataset` and either:
+        - Uses the **incremental** `AutoregressiveLoader`, or
+        - Uses the **multi-step** loader (e.g., `MultiStepLoader`).  
+     4. Builds the decoder-only Transformer.  
+     5. Trains for a specified number of epochs, printing the loss each epoch.
 
-   - **Select the training mode** (e.g. `"incremental"` vs. `"multi-step"`) within `main.py`.  
+   - You can choose **incremental** or **multi-step** by editing the code or a flag inside `main.py`.  
    - Then run:
-     ```bash
+
+     ```
      python main.py
      ```
-   - It will print out the training loss each epoch.
 
-3. **Adjust Hyperparameters**  
-   - You can modify `epochs`, `model_dim`, `num_heads`, etc. in `main.py` or `train.py`.  
-   - For multi-GPU training, `train_model_multi_gpu` uses `nn.DataParallel`.
+3. **Hyperparameters**  
+   - You can adjust hyperparameters such as `model_dim`, `num_layers`, `num_heads`, `epochs` inside `main.py` or in the train functions.
 
 ---
 
 ## Running Unit Tests
 
-We have **unit tests** in the `tests/` folder (e.g. `test_data.py`, `test_model.py`, `test_train.py`) that verify:
+We have unit tests in the `tests/` folder (for example, `test_data.py`, `test_model.py`, `test_train.py`) that validate:
 
-- **Data** generation, preprocessing, and loaders  
-- **Model** forward pass shape correctness and positional encoding  
-- **Training** loop integration
+- **Data**: generation, quantization, loaders  
+- **Model**: forward pass shape, positional encoding correctness  
+- **Training**: end-to-end integration
 
-To run **all** tests at once:
+To run **all** tests:
 
-```bash
+```
 cd tests
 python -m unittest discover
 ```
-or individually:
 
-```bash
+Or run them individually:
+
+```
 python -m unittest test_data.py
 python -m unittest test_model.py
 python -m unittest test_train.py
@@ -187,4 +165,4 @@ python -m unittest test_train.py
 
 ---
 
-**Enjoy experimenting** with this decoder-only Transformer for time series! If you have any issues or questions, please open a discussion or pull request.
+**Enjoy experimenting** with this decoder-only time-series Transformer! If you have questions or want to contribute, please open an issue or pull request.
