@@ -22,7 +22,7 @@ This repository provides a **decoder-only Transformer** for modeling **quantized
 4. [Running the Training Code](#running-the-training-code)  
 5. [Running Unit Tests](#running-unit-tests)
 
----
+
 
 ## Data Preprocessing
 
@@ -58,7 +58,6 @@ We insert the following **optional** tokens:
 
 These tokens are **instance-level** in `TSPreprocessor` and automatically set to `num_classes`, `num_classes + 1`, and `num_classes + 2`, respectively. This ensures they do not overlap with valid data bins in `[0..(num_classes-1)]`.
 
----
 
 ## Training Approaches
 
@@ -87,7 +86,7 @@ In the multi-step approach, each entire sequence is used in a single pass. For a
 
 A causal mask ensures that future tokens cannot be seen at each time step. We then compute the cross-entropy loss over **all** time steps in the sequence. This is sometimes called “teacher forcing,” since the model learns to predict each next token in one forward pass.
 
----
+
 
 ## Model Architecture
 
@@ -109,7 +108,7 @@ We follow the standard sine/cosine approach, commonly used in the original "Atte
 
 These values are added to the embedded tokens before they enter the Transformer layers.
 
----
+
 
 ## Running the Training Code
 
@@ -138,7 +137,7 @@ These values are added to the embedded tokens before they enter the Transformer 
 3. **Hyperparameters**  
    - You can adjust hyperparameters such as `model_dim`, `num_layers`, `num_heads`, `epochs` inside `main.py` or in the train functions.
 
----
+
 
 ## Running Unit Tests
 
@@ -163,6 +162,6 @@ python -m unittest test_model.py
 python -m unittest test_train.py
 ```
 
----
+
 
 **Enjoy experimenting** with this decoder-only time-series Transformer! If you have questions or want to contribute, please open an issue or pull request.
