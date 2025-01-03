@@ -70,19 +70,22 @@ There are two ways to train the model on your time-series:
 
 In this approach, each prefix of a sequence is treated as a separate sample. For a sequence `[x1, x2, ..., xT]`, we generate:
 
-1. X = [x1], Y = [x2]  
-2. X = [x1, x2], Y = [x3]  
-3. ...  
-4. X = [x1, x2, ..., x(T-1)], Y = [xT]
+```
+X = [x1], Y = [x2]  
+X = [x1, x2], Y = [x3]  
+...  
+X = [x1, x2, ..., x(T-1)], Y = [xT]
+```
 
 These pairs get batched in the **`AutoregressiveLoader`**, which also builds an autoregressive (causal) mask for each prefix so the model only attends to past tokens. During training, the loss is computed only on the last token in each prefix.
 
 ### Multi-Step Approach
 
 In the multi-step approach, each entire sequence is used in a single pass. For a sequence `[x1, x2, ..., xT]`, we define:
-
-- X = [x1, x2, ..., x(T-1)]  
-- Y = [x2, x3, ..., xT]  
+```
+X = [x1, x2, ..., x(T-1)]  
+Y = [x2, x3, ..., xT]  
+```
 
 A causal mask ensures that future tokens cannot be seen at each time step. We then compute the cross-entropy loss over **all** time steps in the sequence. This is sometimes called “teacher forcing,” since the model learns to predict each next token in one forward pass.
 
