@@ -37,6 +37,7 @@ class TSPreprocessor:
         self.BOS_TOKEN = self.num_classes
         self.EOS_TOKEN = self.num_classes + 1
         self.PAD_TOKEN = self.num_classes + 2
+        self.vocab_size = num_classes + 3
 
         # Range and quantization
         self.range_min = 0
@@ -131,15 +132,15 @@ class TSPreprocessor:
             add_eos=preprocessor_attrs.get("add_eos", False),
         )
 
-        # Overwrite the internal range values
-        instance.range_min = preprocessor_attrs.get("range_min", 0)
-        instance.range_max = preprocessor_attrs.get("range_max", instance.num_classes - 1)
-        instance.range_precision = preprocessor_attrs.get("range_precision", 1.0)
+        # # Overwrite the internal range values
+        # instance.range_min = preprocessor_attrs.get("range_min", 0)
+        # instance.range_max = preprocessor_attrs.get("range_max", instance.num_classes - 1)
+        # instance.range_precision = preprocessor_attrs.get("range_precision", 1.0)
 
-        # Overwrite the instance-level special tokens
-        instance.BOS_TOKEN = preprocessor_attrs.get("BOS_TOKEN", instance.num_classes)
-        instance.EOS_TOKEN = preprocessor_attrs.get("EOS_TOKEN", instance.num_classes + 1)
-        instance.PAD_TOKEN = preprocessor_attrs.get("PAD_TOKEN", instance.num_classes + 2)
+        # # Overwrite the instance-level special tokens
+        # instance.BOS_TOKEN = preprocessor_attrs.get("BOS_TOKEN", instance.num_classes)
+        # instance.EOS_TOKEN = preprocessor_attrs.get("EOS_TOKEN", instance.num_classes + 1)
+        # instance.PAD_TOKEN = preprocessor_attrs.get("PAD_TOKEN", instance.num_classes + 2)
 
         # Extract the loaded data
         tensors = loaded_data["tensors"]
@@ -228,8 +229,8 @@ class AutoregressiveLoader:
             )
 
             # Create autoregressive masks
-            attn_mask_auto = torch.triu(torch.ones((x.shape[1], x.shape[1]))).bool()
-            attn_mask_auto = ~attn_mask_auto  # Invert to ensure the upper triangular is False
+            attn_mask_auto = torch.triu(torch.ones((x.shape[1], x.shape[1])), diagonal=1).bool()
+            #attn_mask_auto = ~attn_mask_auto  # Invert to ensure the upper triangular is False
 
             # For key padding mask: True means "ignore this position"
             padding_mask = (x == self.dataset.preprocessor.PAD_TOKEN)
@@ -321,8 +322,8 @@ class MultiStepLoader:
 
         # Create a causal attention mask for the max_seq_len
         seq_len = x_padded.shape[1]
-        attn_mask = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.bool))
-        attn_mask = ~attn_mask  # invert => lower-triangular False => allowed
+        attn_mask = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.bool), diagonal=1)
+        #attn_mask = ~attn_mask  # invert => lower-triangular False => allowed
 
         # Key padding mask (True = ignore)
         padding_mask = (x_padded == self.dataset.preprocessor.PAD_TOKEN)
