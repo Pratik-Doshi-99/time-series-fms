@@ -3,8 +3,11 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
+from typing import Union
+from data import MultiStepLoader, AutoregressiveLoader
 
-def train_model(model, train_loader, epochs, device, train_mode="incremental"):
+
+def train_model(model, train_loader: Union[MultiStepLoader, AutoregressiveLoader], epochs, device, train_mode="incremental"):
     """
     train_mode can be 'incremental' or 'multi-step'.
     'incremental':  Each batch is from AutoregressiveLoader, 
@@ -14,7 +17,7 @@ def train_model(model, train_loader, epochs, device, train_mode="incremental"):
     """
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=train_loader.dataset.preprocessor.PAD_TOKEN)
 
     for epoch in range(epochs):
         model.train()
@@ -31,7 +34,7 @@ def train_model(model, train_loader, epochs, device, train_mode="incremental"):
 
             output = model(x, attn_mask=attn_mask, padding_mask=padding_mask)
             # output shape: [batch_size, seq_len, quantized_classes]
-
+            #print('Output Shape:', output.shape)
             if train_mode == "incremental":
                 # Here, y is [batch_size, seq_len], but typically seq_len=1
                 # or we only want the "last token" from the output
@@ -58,7 +61,7 @@ def train_model(model, train_loader, epochs, device, train_mode="incremental"):
 
             loss.backward()
             optimizer.step()
-
+            #print('Loss:',loss.item())
             train_loss += loss.item()
 
         print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss / len(train_loader)}")

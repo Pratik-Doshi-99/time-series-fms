@@ -25,7 +25,8 @@ class TestTrain(unittest.TestCase):
             model_dim=32, 
             num_heads=2, 
             hidden_dim=64, 
-            quantized_classes=103
+            quantized_classes=103,
+            padding_idx=102
         ).to(device)
 
         # Create a mini dataset directly (e.g. 8 samples, each of length 5)
