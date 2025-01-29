@@ -5,6 +5,7 @@ import torch
 import random
 import os
 import math
+import glob
 
 def generate_time_series(length, drift=0.0, cycle_amplitude=0.0, noise_std=0.1, trend_slope=0.0, frequency=1.0, bias=0.0):
     time = np.arange(length)
@@ -80,7 +81,7 @@ class TSPreprocessor:
             "mean_val": mean_val,
             "std_val": std_val
         }
-        return torch.tensor(sequence, dtype=torch.long), metadata
+        return torch.tensor(sequence), metadata
 
     def dequantize_series(self, quantized_series, metadata):
         # skip if they are special tokens
@@ -149,20 +150,74 @@ class TSPreprocessor:
         return tensors, metadata, instance
 
 
-class MultiTimeSeriesDataset:
-    def __init__(self, tensor_file_path, max_training_length=1024):
-        if not os.path.exists(tensor_file_path):
-            raise FileNotFoundError(f"File not found: {tensor_file_path}")
-        self.tensors, self.metadata, self.preprocessor = TSPreprocessor.from_preprocessed_file(tensor_file_path)
+class MultiTimeSeriesDataset(torch.utils.data.Dataset):
+
+    def __init__(self, data_dir, num_samples_per_file=1000, max_training_length=1024):
+        super().__init__()
+
+        if not os.path.isdir(data_dir):
+            raise NotADirectoryError(f"{data_dir} is not a valid directory.")
+        
+        # Discover all .pt files
+        self.file_paths = sorted(glob.glob(os.path.join(data_dir, "*.pt")))
+        if not self.file_paths:
+            raise FileNotFoundError(f"No .pt files found in directory {data_dir}")
+
+        self.num_samples_per_file = num_samples_per_file
         self.max_training_length = max_training_length
+        self.current_file_index = -1  # Start before first file
+        self.samples_taken = 0
+
+        # Load the first file
+        self._load_next_file()
 
     def __len__(self):
-        return len(self.tensors)
+        """Return an approximate number of samples available (total files * num_samples_per_file)."""
+        return len(self.file_paths) * self.num_samples_per_file
 
     def __getitem__(self, index):
-        full_sequence = self.tensors[index]
-        start_idx = random.randint(0, len(full_sequence) - 1)
-        return full_sequence[start_idx:start_idx + self.max_training_length], self.metadata[index]
+        """
+        Return a random sub-sequence from the currently loaded file.
+        If `num_samples_per_file` is exhausted, load the next file.
+        """
+        #print(f'Data fetch: Index={index}, Samples Taken={self.samples_taken}')
+        if self.samples_taken >= self.num_samples_per_file:
+            self._load_next_file()
+
+        # Randomly select a sequence from the current file
+        sequence_idx = random.randint(0, len(self.tensors) - 1)
+        full_sequence = self.tensors[sequence_idx]
+
+        # Randomly select a start index for sub-sequence
+        start_idx = random.randint(0, max(0, len(full_sequence) - 1))
+        sample = full_sequence[start_idx : start_idx + self.max_training_length]
+
+        # Retrieve corresponding metadata
+        sample_metadata = self.metadata[sequence_idx]
+
+        # Increment sample counter
+        self.samples_taken += 1
+
+        return sample, sample_metadata
+
+    def _load_next_file(self):
+        """
+        Loads the next .pt file using TSPreprocessor and resets sample count.
+        If all files are exhausted, loops back to the first file.
+        """
+
+        self.current_file_index = (self.current_file_index + 1) % len(self.file_paths)
+        # print('[INFI] New file index:',self.current_file_index)
+        file_path = self.file_paths[self.current_file_index]
+        # print('[INFI] New file:',file_path)
+        # Load file using TSPreprocessor
+        self.tensors, self.metadata, self.preprocessor = TSPreprocessor.from_preprocessed_file(file_path)
+
+        if len(self.tensors) == 0:
+            raise ValueError(f"File {file_path} contains no valid sequences.")
+
+        self.samples_taken = 0  # Reset count for new file
+        # print(f"[INFO] Loaded file: {file_path} (File {self.current_file_index + 1}/{len(self.file_paths)})")
 
 class AutoregressiveLoader:
     def __init__(self, dataset, batch_size):

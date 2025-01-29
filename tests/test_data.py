@@ -151,7 +151,7 @@ class TestData(unittest.TestCase):
             self.assertEqual(metadata[i], loaded_metadata[i], f"Metadata {i} does not match the original.")
 
     def test_autoregressive_loader(self):
-        dataset = MultiTimeSeriesDataset(tensor_file_path="test_preprocessed_data.pt", max_training_length=32)
+        dataset = MultiTimeSeriesDataset(data_dir="data", max_training_length=32)
         loader = AutoregressiveLoader(dataset, batch_size=8)
 
         for x, y, attn_mask, padding_mask in loader:
@@ -164,11 +164,11 @@ class TestData(unittest.TestCase):
     # NEW TEST: Non-existent file for MultiTimeSeriesDataset
     # -----------------------------------------------------------------------------------
     def test_non_existent_file(self):
-        with self.assertRaises(FileNotFoundError):
-            MultiTimeSeriesDataset(tensor_file_path="non_existent_file.pt", max_training_length=32)
+        with self.assertRaises(NotADirectoryError):
+            MultiTimeSeriesDataset(data_dir="non_existent_dir", max_training_length=32)
 
     def test_attention_masks(self):
-        dataset = MultiTimeSeriesDataset(tensor_file_path="test_preprocessed_data.pt", max_training_length=32)
+        dataset = MultiTimeSeriesDataset(data_dir="data", max_training_length=32)
         loader = AutoregressiveLoader(dataset, batch_size=4)
         i = 0
         for x, y, attn_mask, padding_mask in loader:

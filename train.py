@@ -31,7 +31,7 @@ def train_model(
     model, 
     train_loader: Union["MultiStepLoader", "AutoregressiveLoader"],  
     device, 
-    training_steps=1000,
+    epochs=1,
     train_mode="incremental",
     # Additional parameters for improved training loop
     lr=1e-4,
@@ -78,7 +78,7 @@ def train_model(
     # Using total training steps = epochs * number_of_batches for T_max
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 
-        T_max=training_steps, 
+        T_max=epochs * len(train_loader), 
         eta_min=eta_min
     )
 
@@ -96,117 +96,111 @@ def train_model(
     time_load_next_batch_prev = 0.0
     model.train()
 
+    for epoch in range(epochs):
 
-    for x, y, attn_mask, padding_mask in train_loader:
-        # ---------------------------------------
-        # (A) Measure time to load next batch
-        # ---------------------------------------
-        t_cycle_start = time.time()
-        if t_cycle_end_prev is None:
-            # First iteration (no previous cycle)
-            time_load_next_batch_current = 0.0
-        else:
-            time_load_next_batch_current = t_cycle_start - t_cycle_end_prev
+        for x, y, attn_mask, padding_mask in train_loader:
+            # ---------------------------------------
+            # (A) Measure time to load next batch
+            # ---------------------------------------
+            t_cycle_start = time.time()
+            if t_cycle_end_prev is None:
+                # First iteration (no previous cycle)
+                time_load_next_batch_current = 0.0
+            else:
+                time_load_next_batch_current = t_cycle_start - t_cycle_end_prev
 
-        # ---------------------------------------
-        # (B) Critical training steps
-        # ---------------------------------------
-        t0 = time.time()
-        x = x.to(device)
-        y = y.to(device)
-        attn_mask = attn_mask.to(device)
-        padding_mask = padding_mask.to(device)
-        t_data_to_device = time.time() - t0
+            # ---------------------------------------
+            # (B) Critical training steps
+            # ---------------------------------------
+            t0 = time.time()
+            x = x.to(device)
+            y = y.to(device)
+            attn_mask = attn_mask.to(device)
+            padding_mask = padding_mask.to(device)
+            t_data_to_device = time.time() - t0
 
-        t1 = time.time()
-        output = model(x, attn_mask=attn_mask, padding_mask=padding_mask)
-        t_forward = time.time() - t1
+            t1 = time.time()
+            output = model(x, attn_mask=attn_mask, padding_mask=padding_mask)
+            t_forward = time.time() - t1
 
-        t2 = time.time()
-        if train_mode == "incremental":
-            # Use only the last step for loss
-            last_logits = output[:, -1, :]
-            last_target = y[:, -1]
-            loss = criterion(last_logits, last_target)
-        else:  # "multi-step"
-            # Compute cross-entropy across entire sequence
-            logits = output.transpose(1, 2)  # [batch, classes, seq]
-            loss = criterion(logits, y)
-        t_loss = time.time() - t2
+            t2 = time.time()
+            if train_mode == "incremental":
+                # Use only the last step for loss
+                last_logits = output[:, -1, :]
+                last_target = y[:, -1]
+                loss = criterion(last_logits, last_target)
+            else:  # "multi-step"
+                # Compute cross-entropy across entire sequence
+                logits = output.transpose(1, 2)  # [batch, classes, seq]
+                loss = criterion(logits, y)
+            t_loss = time.time() - t2
 
-        t3 = time.time()
-        optimizer.zero_grad()
-        loss.backward()
-        t_backward = time.time() - t3
+            t3 = time.time()
+            optimizer.zero_grad()
+            loss.backward()
+            t_backward = time.time() - t3
 
-        t4 = time.time()
-        optimizer.step()
-        t_optimizer_step = time.time() - t4
+            t4 = time.time()
+            optimizer.step()
+            t_optimizer_step = time.time() - t4
 
-        # Update step count
-        global_step += 1
-
-        # ---------------------------------------
-        # (C) Save checkpoint every 'save_every'
-        # ---------------------------------------
-        t_save_model = None
-        if (global_step % save_every) == 0:
-            t_save = time.time()
-            checkpoint_name = f"{base_model_name}_{global_step}.pt"
-            checkpoint_path = os.path.join(output_dir, checkpoint_name)
-            torch.save(model.state_dict(), checkpoint_path)
-            t_save_model = time.time() - t_save
-            print(f"[INFO] Saved checkpoint at: {checkpoint_path}")
-
-        # ---------------------------------------
-        # (D) Prepare single wandb.log dictionary
-        #     (Lagged logging for load_next_batch, wandb_log)
-        # ---------------------------------------
-        log_dict = {
-            'global_step': global_step,
-            'train_loss': loss.item(),
-            'lr': scheduler.get_last_lr()[0],
-
-            # Current iteration's critical times
-            'time/data_to_device': t_data_to_device,
-            'time/forward_pass': t_forward,
-            'time/loss_computation': t_loss,
-            'time/backward_pass': t_backward,
-            'time/optimizer_step': t_optimizer_step,
-
-            # Lagged logs
-            'time/load_next_batch': time_load_next_batch_prev
-        }
-        if t_save_model is not None:
-            log_dict['time/model_save_to_disk'] = t_save_model
+            # Update step count
+            global_step += 1
 
 
-        wandb.log(log_dict)
-        
-        if global_step > warmup_steps:
-            scheduler.step()
+            t_save_model = None
+            if (global_step % save_every) == 0:
+                t_save = time.time()
+                checkpoint_name = f"{base_model_name}_{global_step}.pt"
+                checkpoint_path = os.path.join(output_dir, checkpoint_name)
+                torch.save(model.state_dict(), checkpoint_path)
+                t_save_model = time.time() - t_save
+                print(f"[INFO] Saved checkpoint at: {checkpoint_path}")
 
-        print(
-            f"[Global Step {global_step}] "
-            f"Loss: {loss.item():.4f} | "
-            f"LR: {optimizer.param_groups[0]['lr']:.6f} "
-        )
-        if verbose:
+            log_dict = {
+                'global_step': global_step,
+                'train_loss': loss.item(),
+                'lr': scheduler.get_last_lr()[0],
+
+                # Current iteration's critical times
+                'time/data_to_device': t_data_to_device,
+                'time/forward_pass': t_forward,
+                'time/loss_computation': t_loss,
+                'time/backward_pass': t_backward,
+                'time/optimizer_step': t_optimizer_step,
+
+                # Lagged logs
+                'time/load_next_batch': time_load_next_batch_prev
+            }
+            if t_save_model is not None:
+                log_dict['time/model_save_to_disk'] = t_save_model
+
+
+            wandb.log(log_dict)
+            
+            if global_step > warmup_steps:
+                scheduler.step()
+
             print(
-                f"Data->Device: {t_data_to_device:.4f}s | "
-                f"Forward: {t_forward:.4f}s | "
-                f"Loss: {t_loss:.4f}s | "
-                f"Backward: {t_backward:.4f}s | "
-                f"Optimizer Step: {t_optimizer_step:.4f}s"
+                f"[Global Step {global_step}] "
+                f"Loss: {loss.item():.4f} | "
+                f"LR: {optimizer.param_groups[0]['lr']:.6f} "
+                f"Epoch: {epoch+1}/{epochs} "
             )
+            if verbose:
+                print(
+                    f"Data->Device: {t_data_to_device:.4f}s | "
+                    f"Forward: {t_forward:.4f}s | "
+                    f"Loss: {t_loss:.4f}s | "
+                    f"Backward: {t_backward:.4f}s | "
+                    f"Optimizer Step: {t_optimizer_step:.4f}s"
+                )
 
-        # ---------------------------------------
-        # (H) Update lagged time values for next iteration
-        # ---------------------------------------
-        time_load_next_batch_prev = time_load_next_batch_current
-        if global_step >= training_steps:
-            break
-        t_cycle_end_prev = time.time()
+            time_load_next_batch_prev = time_load_next_batch_current
+            # if global_step >= training_steps:
+            #     break
+            t_cycle_end_prev = time.time()
+
 
     wandb.finish()
     # Final save after all epochs
@@ -214,6 +208,7 @@ def train_model(
     checkpoint_path = os.path.join(output_dir, checkpoint_name)
     torch.save(model.state_dict(), checkpoint_path)
     print(f"[INFO] Saved final checkpoint at: {checkpoint_path}")
+    
 
 
 

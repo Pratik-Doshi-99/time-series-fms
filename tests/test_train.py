@@ -29,12 +29,12 @@ class TestTrain(unittest.TestCase):
             padding_idx=102
         ).to(device)
 
-        dataset = MultiTimeSeriesDataset(tensor_file_path="test_preprocessed_data.pt", max_training_length=32)
+        dataset = MultiTimeSeriesDataset(data_dir="data", max_training_length=32, num_samples_per_file=50)
         loader = AutoregressiveLoader(dataset, batch_size=16)
         
         # Attempt training
         # If it doesn't crash, we consider the test passed.
-        train_model(model, loader, device=device, training_steps=1000)
+        train_model(model, loader, device=device)
         # We do a small assertion on model parameters if we want to see if they're updated
         for name, param in model.named_parameters():
             self.assertIsNotNone(param.grad, f"Parameter {name} did not receive a gradient.")
