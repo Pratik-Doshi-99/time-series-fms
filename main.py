@@ -6,69 +6,71 @@ from model import DecoderOnlyTransformer
 from train import train_model
 import random
 import torch
+import argparse
 
 if __name__ == "__main__":
-    # CHOOSE TRAIN MODE
-    # multi-step or incremental
-    train_mode = "incremental"
-    #train_mode = "multi-step"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    parser = argparse.ArgumentParser(description="Train a Decoder-Only Transformer model.")
+    parser.add_argument("--num_layers", type=int, default=2, help="Number of transformer layers.")
+    parser.add_argument("--model_dim", type=int, default=32, help="Dimensionality of the model.")
+    parser.add_argument("--num_heads", type=int, default=2, help="Number of attention heads.")
+    parser.add_argument("--hidden_dim", type=int, default=64, help="Dimension of the feed-forward layer.")
+    parser.add_argument("--epochs", type=int, default=1, help="Number of epochs to train.")
+    parser.add_argument("--max_training_length", type=int, default=64, help="Max sequence length for training data.")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size.")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Initial learning rate.")
+    parser.add_argument("--save_every", type=int, default=100, help="Save a checkpoint every N steps.")
+    parser.add_argument("--train_mode", type=str, default="incremental", choices=["incremental", "multi-step"],
+                        help="Training mode for the loop.")
+    parser.add_argument("--base_dir", type=str, default="checkpoints", help="Directory where checkpoints are saved.")
+    parser.add_argument("--base_model_name", type=str, default="model", help="Base name for checkpoint files.")
+    parser.add_argument("--eta_min", type=float, default=1e-6, help="Min LR for cosine annealing.")
+    parser.add_argument("--data_dir", type=str, default="data",
+                        help="Path to the preprocessed tensor file.")
+    parser.add_argument("--samples_per_file", type=int, default=1000, help="The number of samples to create from a single .pt file in the data_dir")
+    parser.add_argument("--warmup_steps", type=int, default=250, help="Number of warmup steps for LR.")
+    parser.add_argument("--device", type=str, default=None, help="Device to use (cpu or cuda). If None, auto-detect.")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
+    args = parser.parse_args()
 
-    num_series = 1000
-    series_length = 128
-    max_training_length = 64
-    num_classes = 100
-
-    # Generate synthetic data
-    series_list = [
-        generate_time_series(
-            series_length,
-            drift=random.uniform(0, 0.2),
-            cycle_amplitude=random.uniform(0.5, 1.5),
-            noise_std=random.uniform(0.1, 0.3),
-            trend_slope=random.uniform(0, 0.05),
-            frequency=random.uniform(0.5, 2.0),
-            bias=random.uniform(-10, 10)
-        )
-        for _ in range(num_series)
-    ]
-
-    # Preprocess data
-    preprocessor = TSPreprocessor(num_classes=num_classes, add_bos=True, add_eos=True)
-    preprocessed_tensors = []
-    metadata = []
-
-    for series in series_list:
-        tensor, meta = preprocessor.preprocess_series(series)
-        preprocessed_tensors.append(tensor)
-        metadata.append(meta)
-
-    preprocessor.save_preprocessed(preprocessed_tensors, metadata, "preprocessed_data.pt")
-
-    # Create Dataset
-    dataset = MultiTimeSeriesDataset(
-        tensor_file_path="preprocessed_data.pt", 
-        max_training_length=max_training_length
-    )
-
-    # Depending on train_mode, choose loader
-    if train_mode == "incremental":
-        print("Using incremental step-by-step approach (AutoregressiveLoader).")
-        train_loader = AutoregressiveLoader(dataset, batch_size=64)
+    # Determine device
+    if args.device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
-        print("Using multi-step approach (MultiStepLoader).")
-        train_loader = MultiStepLoader(dataset, batch_size=64)
+        device = torch.device(args.device)
+    print(f"Using device: {device}")
 
-    # Build model
-    model = DecoderOnlyTransformer(
-        num_layers=4, 
-        model_dim=32, 
-        num_heads=4, 
-        hidden_dim=128, 
-        quantized_classes=preprocessor.vocab_size,
-        padding_idx=preprocessor.PAD_TOKEN
+    # Create dataset & loader
+    dataset = MultiTimeSeriesDataset(
+        data_dir=args.data_dir,
+        num_samples_per_file=args.samples_per_file,
+        max_training_length=args.max_training_length
     )
+    loader = AutoregressiveLoader(dataset, batch_size=args.batch_size)
+    print(dataset.preprocessor.vocab_size, dataset.preprocessor.PAD_TOKEN)
+    # Create model
+    model = DecoderOnlyTransformer(
+        num_layers=args.num_layers,
+        model_dim=args.model_dim,
+        num_heads=args.num_heads,
+        hidden_dim=args.hidden_dim,
+        quantized_classes=dataset.preprocessor.vocab_size,
+        padding_idx=dataset.preprocessor.PAD_TOKEN
+    )
+
+    
 
     # Train
-    print(f"Training model with train_mode={train_mode}...")
-    train_model(model, train_loader, epochs=2, device=device, train_mode=train_mode)
+    train_model(
+        model,
+        loader,
+        device=device,
+        epochs=args.epochs,
+        train_mode=args.train_mode,
+        lr=args.lr,
+        save_every=args.save_every,
+        verbose=args.verbose,
+        base_dir=args.base_dir,
+        base_model_name=args.base_model_name,
+        eta_min=args.eta_min,
+        warmup_steps=args.warmup_steps
+    )
