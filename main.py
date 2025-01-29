@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_steps", type=int, default=250, help="Number of warmup steps for LR.")
     parser.add_argument("--device", type=str, default=None, help="Device to use (cpu or cuda). If None, auto-detect.")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
+    parser.add_argument("--autoreg_expansion_factor", type=int, default=50, help="When using autoregressive training, the factor by which the total samples will expand")
     args = parser.parse_args()
 
     # Determine device
@@ -72,5 +73,6 @@ if __name__ == "__main__":
         base_dir=args.base_dir,
         base_model_name=args.base_model_name,
         eta_min=args.eta_min,
-        warmup_steps=args.warmup_steps
+        warmup_steps=args.warmup_steps,
+        
     )

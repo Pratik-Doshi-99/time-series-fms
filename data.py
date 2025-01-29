@@ -220,17 +220,18 @@ class MultiTimeSeriesDataset(torch.utils.data.Dataset):
         # print(f"[INFO] Loaded file: {file_path} (File {self.current_file_index + 1}/{len(self.file_paths)})")
 
 class AutoregressiveLoader:
-    def __init__(self, dataset, batch_size):
+    def __init__(self, dataset, batch_size, autoreg_expansion_factor = 50):
         self.dataset = dataset
         self.batch_size = batch_size
         self.cache = []
         self.current_index = 0
+        self.autoreg_expansion_factor = autoreg_expansion_factor
 
     def __iter__(self):
         return self
     
     def __len__(self):
-        return math.ceil(len(self.dataset) / self.batch_size)
+        return math.ceil(len(self.dataset) / self.batch_size) * self.autoreg_expansion_factor
 
     def __next__(self):
         batched_x, batched_y = [], []
