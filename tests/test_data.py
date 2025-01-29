@@ -175,10 +175,11 @@ class TestData(unittest.TestCase):
             i += 1
             max_len = x.size(1)
             self.assertEqual(attn_mask.size(), (max_len, max_len), "Attention mask dimensions are incorrect.")
+            #print(attn_mask.float())
             self.assertTrue(
                 torch.allclose(
                     attn_mask.float(), 
-                    (~torch.triu(torch.ones((max_len, max_len))).bool()).float()
+                    (torch.triu(torch.ones((max_len, max_len)), diagonal=1).bool()).float()
                 ),
                 "Attention mask does not have correct triangular structure."
             )
