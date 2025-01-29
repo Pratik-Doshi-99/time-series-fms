@@ -30,7 +30,7 @@ class PositionalEncoding(nn.Module):
         return x
 
 class DecoderOnlyTransformer(nn.Module):
-    def __init__(self, num_layers, model_dim, num_heads, hidden_dim, quantized_classes=103,padding_idx=103):
+    def __init__(self, num_layers, model_dim, num_heads, hidden_dim, quantized_classes=103,padding_idx=102):
         super(DecoderOnlyTransformer, self).__init__()
         self.embedding = nn.Embedding(quantized_classes, model_dim, padding_idx=padding_idx)
         self.pos_encoding = PositionalEncoding(d_model=model_dim)
