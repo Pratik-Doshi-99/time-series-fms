@@ -6,6 +6,8 @@ import random
 import os
 import math
 import glob
+import argparse
+import math
 
 def generate_time_series(length, drift=0.0, cycle_amplitude=0.0, noise_std=0.1, trend_slope=0.0, frequency=1.0, bias=0.0):
     time = np.arange(length)
@@ -16,11 +18,49 @@ def generate_time_series(length, drift=0.0, cycle_amplitude=0.0, noise_std=0.1, 
     drift_array = drift * time
     return base_series + trend + cycle + noise + drift_array
 
-import numpy as np
-import torch
-import random
-import os
-import math
+
+def generate_and_save_time_series(total_samples, samples_per_file, base_directory, series_length_range=(50, 5000)):
+    """
+    Generates synthetic time series data with random parameters and saves them in multiple files.
+
+    Parameters:
+    total_samples (int): Total number of time series to generate.
+    samples_per_file (int): Number of samples per file.
+    base_directory (str): Directory where the files will be saved.
+    """
+    num_classes = 100
+    preprocessor = TSPreprocessor(num_classes=num_classes)
+    # Ensure the base directory exists
+    os.makedirs(base_directory, exist_ok=True)
+    
+    num_files = (total_samples + samples_per_file - 1) // samples_per_file  # Compute number of files required
+    
+    for file_idx in range(num_files):
+        preprocessed_tensors = []
+        metadata = []
+        
+        for _ in range(min(samples_per_file, total_samples - file_idx * samples_per_file)):
+            series_length = random.randint(series_length_range[0], series_length_range[1])  # Varying length for diversity
+            series = generate_time_series(
+                length=series_length, 
+                drift=random.uniform(-0.5, 0.5),  # Increased range for more variability
+                cycle_amplitude=random.uniform(0.1, 5.0),  # More diverse amplitude range
+                noise_std=random.uniform(0.05, 1.0),  # Wider range for noise
+                trend_slope=random.uniform(-0.5, 0.5),  # Covering more trend types
+                frequency=random.uniform(0.5, 10.0),  # Expanding frequency range
+                bias=random.uniform(-10.0, 20.0)  # Allowing for negative and positive bias
+            )
+            tensor, meta = preprocessor.preprocess_series(series)
+            preprocessed_tensors.append(tensor)
+            metadata.append(meta)
+        
+        # Define file path
+        file_path = os.path.join(base_directory, f"preprocessed_data_{file_idx + 1}.pt")
+        preprocessor.save_preprocessed(preprocessed_tensors, metadata, file_path)
+        print(f"Saved {len(preprocessed_tensors)} samples to {file_path}")
+
+
+
 
 class TSPreprocessor:
     """
@@ -385,3 +425,21 @@ class MultiStepLoader:
         padding_mask = (x_padded == self.dataset.preprocessor.PAD_TOKEN)
 
         return x_padded, y_padded, attn_mask, padding_mask
+    
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Generate synthetic time series samples.")
+    parser.add_argument("--samples", type=int, default=10_000, help="Number of samples to be generated")
+    parser.add_argument("--samples_per_file", type=int, default=1000, help="Samples to save in a single file")
+    parser.add_argument("--min_len", type=int, default=50, help="Minimum time steps in a sample.")
+    parser.add_argument("--max_len", type=int, default=50, help="Maximum time steps in a sample.")
+    parser.add_argument("--base_dir", type=str, default='data', help="Base directory")
+    args = parser.parse_args()
+    
+    generate_and_save_time_series(
+        total_samples=args.samples,
+        samples_per_file=args.samples_per_file,
+        base_directory=args.base_dir,
+        series_length_range=(args.min_len, args.max_len)
+    )

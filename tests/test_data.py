@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import modules from the parent directory
-from data import generate_time_series, TSPreprocessor, MultiTimeSeriesDataset, AutoregressiveLoader
+from data import generate_time_series, generate_and_save_time_series, TSPreprocessor, MultiTimeSeriesDataset, AutoregressiveLoader
 
 class TestData(unittest.TestCase):
 
@@ -25,6 +25,35 @@ class TestData(unittest.TestCase):
         series = generate_time_series(length=1, drift=0.1, cycle_amplitude=1.0, noise_std=0.2, trend_slope=0.05, frequency=2.0, bias=10.0)
         self.assertEqual(len(series), 1, "Series of length=1 should have exactly 1 data point")
         self.assertTrue(isinstance(series, np.ndarray))
+
+    def test_generate_and_save_time_series(self):
+        """
+        Tests generate_and_save_time_series by generating 3000 samples across 3 files
+        and visualizing the first time series from each file.
+        """
+        base_directory = "./test_time_series_data"
+        generate_and_save_time_series(total_samples=3000, samples_per_file=1000, base_directory=base_directory, series_length_range=(50,500))
+        
+        fig, axs = plt.subplots(1, 3, figsize=(18, 6))
+        
+        for i in range(3):
+            file_path = os.path.join(base_directory, f"preprocessed_data_{i + 1}.pt")
+            data, metadata, instance = TSPreprocessor.from_preprocessed_file(file_path)
+            self.assertTrue(len(data) <= 1000) #checking if there are less than or equal to samples_per_file defined earlier
+            lens = [len(d) for d in data]
+            self.assertTrue(len(data) <= 1000) #checking if there are less than or equal to samples_per_file defined earlier
+            self.assertTrue(min(lens) >= 50)
+            self.assertTrue(max(lens) <= 500)
+            first_series = data[0].numpy()  # Extract first time series from the file
+            axs[i].plot(first_series, color="blue")
+            axs[i].set_title(f"First Time Series from File {i + 1}")
+            axs[i].set_xlabel("Time Steps")
+            axs[i].set_ylabel("Value")
+            axs[i].grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+        print("Test completed: Generated and visualized 3 sample time series.")
 
     # -----------------------------------------------------------------------------------
     # NEW TEST: Constant series (no drift, amplitude, noise, slope)
