@@ -147,7 +147,7 @@ def train_model(
             t5 = time.time()
             #memory clean up
             loss_val = loss.item()
-            del loss, output
+            del loss, output, x, y, attn_mask, padding_mask
             torch.cuda.empty_cache()
             t_clear_mem = time.time() - t5
 
