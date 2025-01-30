@@ -123,7 +123,7 @@ class TSPreprocessor:
         2) Creates a TSPreprocessor with the same attributes
         3) Returns (tensors, metadata, preprocessor_instance)
         """
-        loaded_data = torch.load(file_path)
+        loaded_data = torch.load(file_path, weights_only=False)
         preprocessor_attrs = loaded_data.get("preprocessor_attrs", {})
 
         # Reconstruct an instance with the same constructor args
