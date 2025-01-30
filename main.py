@@ -22,6 +22,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_mode", type=str, default="incremental", choices=["incremental", "multi-step"],
                         help="Training mode for the loop.")
     parser.add_argument("--base_dir", type=str, default="checkpoints", help="Directory where checkpoints are saved.")
+    parser.add_argument("--run_name", type=str, default="tsfm", help="W&B Run Name.")
     parser.add_argument("--base_model_name", type=str, default="model", help="Base name for checkpoint files.")
     parser.add_argument("--eta_min", type=float, default=1e-6, help="Min LR for cosine annealing.")
     parser.add_argument("--data_dir", type=str, default="data",
@@ -74,5 +75,5 @@ if __name__ == "__main__":
         base_model_name=args.base_model_name,
         eta_min=args.eta_min,
         warmup_steps=args.warmup_steps,
-        
+        run_name=args.run_name
     )
