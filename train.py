@@ -137,12 +137,20 @@ def train_model(
 
             t3 = time.time()
             optimizer.zero_grad()
-            loss.backward()
+            loss.backward(retain_graph=False)
             t_backward = time.time() - t3
 
             t4 = time.time()
             optimizer.step()
             t_optimizer_step = time.time() - t4
+
+            t5 = time.time()
+            #memory clean up
+            loss_val = loss.item()
+            del loss, output
+            torch.cuda.empty_cache()
+            t_clear_mem = time.time() - t5
+
 
             # Update step count
             global_step += 1
@@ -159,7 +167,7 @@ def train_model(
 
             log_dict = {
                 'global_step': global_step,
-                'train_loss': loss.item(),
+                'train_loss': loss_val,
                 'lr': scheduler.get_last_lr()[0],
 
                 # Current iteration's critical times
@@ -168,7 +176,7 @@ def train_model(
                 'time/loss_computation': t_loss,
                 'time/backward_pass': t_backward,
                 'time/optimizer_step': t_optimizer_step,
-
+                "time/memory_clear": t_clear_mem,
                 # Lagged logs
                 'time/load_next_batch': time_load_next_batch_prev
             }
@@ -183,7 +191,7 @@ def train_model(
 
             print(
                 f"[Global Step {global_step}] "
-                f"Loss: {loss.item():.4f} | "
+                f"Loss: {loss_val:.4f} | "
                 f"LR: {optimizer.param_groups[0]['lr']:.6f} "
                 f"Epoch: {epoch+1}/{epochs} "
             )
