@@ -203,6 +203,7 @@ class MultiTimeSeriesDataset(torch.utils.data.Dataset):
         if not self.file_paths:
             raise FileNotFoundError(f"No .pt files found in directory {data_dir}")
 
+        random.shuffle(self.file_paths)
         self.num_samples_per_file = num_samples_per_file
         self.max_training_length = max_training_length
         self.current_file_index = -1  # Start before first file
