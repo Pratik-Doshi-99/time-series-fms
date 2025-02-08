@@ -47,7 +47,7 @@ if __name__ == "__main__":
         num_samples_per_file=args.samples_per_file,
         max_training_length=args.max_training_length
     )
-    loader = AutoregressiveLoader(dataset, batch_size=args.batch_size)
+    loader = AutoregressiveLoader(dataset, batch_size=args.batch_size, autoreg_expansion_factor=args.autoreg_expansion_factor)
     print(dataset.preprocessor.vocab_size, dataset.preprocessor.PAD_TOKEN)
     # Create model
     model = DecoderOnlyTransformer(
