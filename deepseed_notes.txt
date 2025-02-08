@@ -1,0 +1,58 @@
+Example Structure of client_entry.py
+
+```
+parser = argparse.ArgumentParser(description='My training script.')
+# this one is needed as it is passed by the deepspeed launcher
+parser.add_argument('--local_rank', type=int, default=-1,
+                    help='local rank passed from distributed launcher')
+# Include DeepSpeed configuration arguments
+parser = deepspeed.add_config_arguments(parser)
+cmd_args = parser.parse_args()
+
+# initialize model
+# something like: model = MyNN(in=1024, out=2048)
+
+model_engine, deepspeed.initialize(args=cmd_args,model=model,model_parameters=params)
+
+
+# train loop
+for step, batch in enumerate(data_loader):
+
+	#forward() method, executed independently on different gpus
+	loss = model_engine(batch)
+
+	# runs backpropagation, gradients are synced across devices (all_reduce). if gradient_accumulation_steps are defined, then
+	# after every accumulation steps, the all_reduce is called
+	model_engine.backward(loss)
+
+	#weight update, based on the synced gradients.
+	model_engine.step()
+
+	#save checkpoint, 
+	if step % args.save_interval:
+        	client_sd['step'] = step
+        	ckpt_id = loss.item()
+        	model_engine.save_checkpoint(args.save_dir, ckpt_id, client_sd = client_sd)
+
+
+
+```
+
+
+
+deepspeed --hostfile=myhostfile client_entry.py <client args> \
+  --deepspeed --deepspeed_config ds_config.json
+
+
+myhostfile contains host details when there are multiple nodes:
+Eg content:
+```
+worker-1 slots=4
+worker-2 slots=4
+```
+In the above, workers 1 and 2 are nodes, slots imply GPUs.
+
+
+<client_entry.py> is the entry script, kinda like the main.py. This file must support a --local_rank cli argument
+<client args> are the cli args for the client
+ds_config.json
