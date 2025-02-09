@@ -7,28 +7,13 @@ import torch.nn as nn
 from typing import Union
 from data import MultiStepLoader, AutoregressiveLoader
 import wandb
+import csv
+from utils import create_training_directory, log_to_csv
+from model import DecoderOnlyTransformer
 
-
-def create_training_directory(base_dir: str) -> str:
-    """
-    Creates a new directory named `base_dir`. If it already exists,
-    it appends an incremental suffix (_1, _2, ...) until a non-existing
-    directory is found, then creates it.
-
-    Returns:
-        str: The final path of the newly created directory.
-    """
-    dir_path = base_dir
-    counter = 1
-    while os.path.exists(dir_path):
-        dir_path = f"{base_dir}_{counter}"
-        counter += 1
-
-    os.makedirs(dir_path)
-    return dir_path, counter
 
 def train_model(
-    model, 
+    model: DecoderOnlyTransformer, 
     train_loader: Union["MultiStepLoader", "AutoregressiveLoader"],  
     device, 
     epochs=1,
@@ -41,7 +26,8 @@ def train_model(
     base_model_name="model",
     eta_min=1e-6,
     warmup_steps = 100,
-    run_name = 'tsfm'
+    run_name = 'tsfm',
+    verbose_acts = False
 ):
     """
     Train the given model, with options for incremental or multi-step training modes.
@@ -75,6 +61,7 @@ def train_model(
 
     # Optimizer & Cosine LR Scheduler
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    #optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=1e-3)
     # Using total training steps = epochs * number_of_batches for T_max
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 
@@ -120,7 +107,7 @@ def train_model(
             t_data_to_device = time.time() - t0
 
             t1 = time.time()
-            output = model(x, attn_mask=attn_mask, padding_mask=padding_mask)
+            output = model(x, attn_mask=attn_mask, padding_mask=padding_mask, act_dir=output_dir)
             t_forward = time.time() - t1
 
             t2 = time.time()
@@ -138,6 +125,15 @@ def train_model(
             t3 = time.time()
             optimizer.zero_grad()
             loss.backward(retain_graph=False)
+            # print("--->encoder:")
+            # for name, params in model.named_parameters():
+            #     print("-->name:",name, "-->max_grad:", params.grad.max(), "-->min_grad:", params.grad.min())
+            if verbose_acts:
+                csv_log_dict = {}
+                for name, params in model.named_parameters():
+                    csv_log_dict[f"{name}_max"] = params.grad.max().item()
+                    csv_log_dict[f"{name}_min"] = params.grad.min().item()
+                log_to_csv(os.path.join(output_dir,"gradients.csv"),csv_log_dict)
             t_backward = time.time() - t3
 
             t4 = time.time()

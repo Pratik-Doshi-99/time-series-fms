@@ -85,5 +85,6 @@ if __name__ == "__main__":
         base_model_name=args.base_model_name,
         eta_min=args.eta_min,
         warmup_steps=args.warmup_steps,
-        run_name=args.run_name
+        run_name=args.run_name,
+        verbose_acts=args.verbose_acts
     )

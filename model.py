@@ -3,6 +3,8 @@
 import math
 import torch
 import torch.nn as nn
+from utils import log_to_csv
+import os
 
 class PositionalEncoding(nn.Module):
     """
@@ -30,11 +32,12 @@ class PositionalEncoding(nn.Module):
         return x
 
 class DecoderOnlyTransformer(nn.Module):
-    def __init__(self, num_layers, model_dim, num_heads, hidden_dim, quantized_classes=103,padding_idx=102):
+    def __init__(self, num_layers, model_dim, num_heads, hidden_dim, quantized_classes=103,
+                 padding_idx=102, verbose_acts=False):
         super(DecoderOnlyTransformer, self).__init__()
         self.embedding = nn.Embedding(quantized_classes, model_dim, padding_idx=padding_idx)
         self.pos_encoding = PositionalEncoding(d_model=model_dim)
-        
+        self.verbose_acts = verbose_acts
         self.layers = nn.ModuleList([
             nn.TransformerDecoderLayer(
                 d_model=model_dim, 
@@ -46,7 +49,7 @@ class DecoderOnlyTransformer(nn.Module):
         ])
         self.fc_out = nn.Linear(model_dim, quantized_classes)
 
-    def forward(self, x: torch.Tensor, attn_mask: torch.Tensor = None, padding_mask: torch.Tensor = None):
+    def forward(self, x: torch.Tensor, attn_mask: torch.Tensor = None, padding_mask: torch.Tensor = None, act_dir=None):
         """
         x: [batch_size, seq_len]
         attn_mask: [seq_len, seq_len], True where we want to block attention
@@ -54,10 +57,28 @@ class DecoderOnlyTransformer(nn.Module):
         """
         # Embed tokens
         x = self.embedding(x)  # [batch_size, seq_len, model_dim]
+        act_stats = {}
+        if self.verbose_acts and act_dir:
+            with torch.no_grad():
+                act_stats['post_embed_min'] = x.min().item()
+                act_stats['post_embed_max'] = x.max().item()
+        if self.verbose_acts and torch.isnan(x).any():
+            print('NAN detected in embedding')
+        
+        
         # Add positional encoding
         x = self.pos_encoding(x)
+        if self.verbose_acts and act_dir:
+            with torch.no_grad():
+                act_stats['post_pos_min'] = x.min().item()
+                act_stats['post_pos_max'] = x.max().item()
+        if self.verbose_acts and torch.isnan(x).any():
+            print('NAN detected in pos encoding')
+        
+        
         #print(f'Pre Transformer Shapes: x={x.shape}, attn_mask={attn_mask.shape}, padding_mask={padding_mask.shape}')
         # Pass through each Transformer Decoder layer
+        i = 1
         for layer in self.layers:
             x = layer(
                 tgt=x, 
@@ -65,8 +86,21 @@ class DecoderOnlyTransformer(nn.Module):
                 tgt_mask=attn_mask, 
                 tgt_key_padding_mask=padding_mask
             )
+            if self.verbose_acts and act_dir:
+                with torch.no_grad():
+                    act_stats[f'post_layer{i}_min'] = x.min().item()
+                    act_stats[f'post_layer{i}_max'] = x.max().item()
+            if self.verbose_acts and torch.isnan(x).any():
+                print('NAN detected at layer:',i)
+            i+=1
         # Map final hidden states to output logits
-        return self.fc_out(x)
+        x = self.fc_out(x)
+        if self.verbose_acts and act_dir:
+            with torch.no_grad():
+                act_stats[f'post_fcout_min'] = x.min().item()
+                act_stats[f'post_fcout_max'] = x.max().item()
+            log_to_csv(os.path.join(act_dir,'activations.csv'),act_stats)
+        return x
 
 
 if __name__ == '__main__':
