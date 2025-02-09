@@ -12,8 +12,15 @@ from typing import Union
 import deepspeed
 from deepspeed.runtime.utils import see_memory_usage
 
-# Example placeholder for your custom dataset loaders
-# from your_dataset import MultiStepLoader, AutoregressiveLoader
+
+'''
+TODO:
+1. Rewrite the train function to use lr decay (cosine) from ds config
+2. Get ds_config from a file
+3. Configure Deepseek to log its metrics to wandb. Refer here: https://deepspeed.readthedocs.io/en/latest/monitor.html
+4. Comment PyTorch distributed commands
+'''
+
 
 # Your existing directory-creation function
 def create_training_directory(base_dir: str):
@@ -35,6 +42,7 @@ def create_training_directory(base_dir: str):
 
 def train_model_deepseek(
     model,
+    logger,
     train_loader: Union["MultiStepLoader", "AutoregressiveLoader"],
     epochs=1,
     train_mode="incremental",
@@ -46,63 +54,14 @@ def train_model_deepseek(
     eta_min=1e-6,
     warmup_steps=100,
     run_name='tsfm',
-    gradient_accumulation_steps=2
+    gradient_accumulation_steps=2,
+    local_rank=0
 ):
-    """
-    DeepSpeed-based multi-GPU training function.
 
-    Args:
-        model (nn.Module): The model to train.
-        train_loader (Union[MultiStepLoader, AutoregressiveLoader]): Training data loader.
-        epochs (int): Number of epochs to train.
-        train_mode (str, optional): 'incremental' or 'multi-step'.
-        lr (float, optional): Initial learning rate.
-        save_every (int, optional): Save a checkpoint every N mini-batches.
-        verbose (bool, optional): Whether to log detailed timing info.
-        base_dir (str, optional): Directory where checkpoints will be saved.
-        base_model_name (str, optional): Base name for saved checkpoints.
-        eta_min (float, optional): Minimum learning rate for CosineAnnealing.
-        warmup_steps (int, optional): Number of warmup steps.
-        run_name (str, optional): Base name for wandb runs.
-        gradient_accumulation_steps (int, optional): Steps to accumulate grads before syncing.
-    """
 
-    # ----------------------------------------------------------------------
-    # 1) Initialize Distributed + Parse local/global rank
-    # ----------------------------------------------------------------------
-    deepspeed.init_distributed()
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    global_rank = dist.get_rank()
-    world_size = dist.get_world_size()
-
-    # Set the device for this process
-    torch.cuda.set_device(local_rank)
-    device = torch.device("cuda", local_rank)
-
-    # ----------------------------------------------------------------------
-    # 2) Configure Logging
-    #    - Master rank logs to console + wandb
-    #    - All ranks log to rank-specific file
-    # ----------------------------------------------------------------------
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-
-    # Each rank writes to its own file
-    log_file = f"{run_name}_{local_rank}.log"
-    file_handler = logging.FileHandler(log_file, mode='w')
-    file_handler.setLevel(logging.INFO)
-    logger.addHandler(file_handler)
-
-    # Only rank 0 logs to console (optional)
-    #if local_rank == 0:
-    #    console_handler = logging.StreamHandler()
-    #    console_handler.setLevel(logging.INFO)
-    #    logger.addHandler(console_handler)
-
-    # ----------------------------------------------------------------------
-    # 3) Prepare output directory & wandb (only on master rank)
-    # ----------------------------------------------------------------------
-    output_dir, name_counter = create_training_directory(base_dir)
+    
+    if local_rank == 0:
+        output_dir, name_counter = create_training_directory(base_dir)
     run_name = f"{run_name}_{name_counter}"
 
     if local_rank == 0:
@@ -112,13 +71,7 @@ def train_model_deepseek(
         # If not rank 0, do not init wandb (avoid conflicts)
         wandb.run = None  # Safe guard
 
-    # ----------------------------------------------------------------------
-    # 4) Define DeepSpeed config and Initialize
-    # ----------------------------------------------------------------------
-    #   - We use manual CosineAnnealingLR, so we won't specify a DS scheduler
-    #   - We'll do partial gradient sync via `gradient_accumulation_steps`
-    #   - We'll do FP16 by default; can disable if you prefer full precision
-    # ----------------------------------------------------------------------
+    
     ds_config = {
         "train_micro_batch_size_per_gpu": train_loader.batch_size,  # Must match your loader’s batch_size
         "gradient_accumulation_steps": gradient_accumulation_steps,

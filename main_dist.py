@@ -12,6 +12,12 @@ from data import (generate_time_series, TSPreprocessor, MultiTimeSeriesDataset,
 from model import DecoderOnlyTransformer
 from dist_train import train_model_deepseek  # The new deepseek training function you wrote
 
+
+'''
+TODO:
+1. Move all training configurations to a yaml file
+'''
+
 def main_worker(args):
     """
     Worker function invoked on each GPU process. Here, we:
@@ -19,8 +25,18 @@ def main_worker(args):
       2) Call train_model_deepseek for multi-GPU training.
     """
 
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    # Each rank writes to its own file
+    log_file = f"{args.run_name}_{args.local_rank}.log"
+    file_handler = logging.FileHandler(log_file, mode='w')
+    file_handler.setLevel(logging.INFO)
+    logger.addHandler(file_handler)
+
     # Log the device for debugging (one line per GPU process)
-    print(f"[Worker] Using device: cuda (local rank = {os.environ.get('LOCAL_RANK', '0')})")
+    #print(f"[Worker] Using device: cuda (local rank = {os.environ.get('LOCAL_RANK', '0')})")
+    print(f"[Worker] Using device: cuda (local rank = {local_rank})")
 
     # 1) Create dataset & loader
     dataset = MultiTimeSeriesDataset(
@@ -45,6 +61,7 @@ def main_worker(args):
     # 3) Call deepseek training loop
     train_model_deepseek(
         model,
+        logger=logger,
         train_loader=loader,
         epochs=args.epochs,
         train_mode=args.train_mode,
@@ -102,9 +119,9 @@ def main():
                     help='local rank passed from distributed launcher')
 
     # Additional multi-GPU argument
-    parser.add_argument("--data_parallel_workers", type=int, default=2,
-                        help="Number of GPUs to use for data-parallel training")
-
+    #parser.add_argument("--data_parallel_workers", type=int, default=2,
+    #                    help="Number of GPUs to use for data-parallel training")
+    parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
 
     # We pass the entire `args` to the DeepSpeed launcher
@@ -114,6 +131,7 @@ def main():
     #    args=(args,),           # Must pass as tuple
     #    num_gpus=args.data_parallel_workers
     #)
+    main_worker(args)
 
 
 if __name__ == "__main__":
