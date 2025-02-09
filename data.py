@@ -351,9 +351,12 @@ class MultiStepLoader:
     def __init__(self, dataset, batch_size):
         self.dataset = dataset
         self.batch_size = batch_size
-        self.current_index = 0
+        self.current_index = -1
+        self.terminated = False
 
     def __iter__(self):
+        self.current_index = -1
+        self.terminated = False
         return self
 
     def __len__(self):
@@ -366,44 +369,28 @@ class MultiStepLoader:
         Y = entire sequence minus the first token
         If shorter than 2 tokens, we skip it.
         """
+
+        if self.terminated:
+            raise StopIteration
+
+
         batched_x, batched_y = [], []
-
-        while len(batched_x) < self.batch_size:
-            if self.current_index >= len(self.dataset):
-                if batched_x:
-                    # Return whatever we have in batched_x
-                    break
-                else:
-                    # No more data
-                    self.current_index = 0
-                    raise StopIteration
-
-            sequence, _ = self.dataset[self.current_index]
+        for _ in range(self.batch_size):
             self.current_index += 1
-
-            if len(sequence) < 2:
-                # Not enough tokens to form X->Y
-                continue
-
-            # For multi-step approach:
-            # X = [x0, x1, ..., x_{n-2}, x_{n-1}]
-            # Y = [x1, x2, ..., x_{n-1}, x_{n}] 
-            # But if you want to keep it exact, you can do:
-            # X = sequence[:-1], Y = sequence[1:]
-            # (or keep them same length & rely on shifting in the model; 
-            #  depends on preference)
-
-            # We’ll just do full length = len(sequence)
-            # X is the entire sequence except the last token
-            # Y is the entire sequence except the first token
-            X = sequence[:-1]
-            Y = sequence[1:]
-
+            if self.current_index >= len(self.dataset):
+                self.terminated = True
+                if batched_x:
+                    break
+                raise StopIteration
+            sequence, _ = self.dataset[self.current_index]
+            X = sequence[:-1].long()
+            Y = sequence[1:].long()
             batched_x.append(X)
             batched_y.append(Y)
-
+            
         if not batched_x:
             raise StopIteration
+
 
         # Now we have up to batch_size sequences. Pad them
         x_padded = torch.nn.utils.rnn.pad_sequence(

@@ -19,7 +19,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size.")
     parser.add_argument("--lr", type=float, default=1e-4, help="Initial learning rate.")
     parser.add_argument("--save_every", type=int, default=100, help="Save a checkpoint every N steps.")
-    parser.add_argument("--train_mode", type=str, default="incremental", choices=["incremental", "multi-step"],
+    parser.add_argument("--train_mode", type=str, default="multi-step", choices=["incremental", "multi-step"],
                         help="Training mode for the loop.")
     parser.add_argument("--base_dir", type=str, default="checkpoints", help="Directory where checkpoints are saved.")
     parser.add_argument("--run_name", type=str, default="tsfm", help="W&B Run Name.")
@@ -32,7 +32,10 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default=None, help="Device to use (cpu or cuda). If None, auto-detect.")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
     parser.add_argument("--autoreg_expansion_factor", type=int, default=50, help="When using autoregressive training, the factor by which the total samples will expand")
+    parser.add_argument("--verbose_acts", action="store_false", help="If set to true, model prints stats on gradients and intermediate activations")
     args = parser.parse_args()
+
+    torch.autograd.set_detect_anomaly(True)
 
     # Determine device
     if args.device is None:
@@ -47,8 +50,14 @@ if __name__ == "__main__":
         num_samples_per_file=args.samples_per_file,
         max_training_length=args.max_training_length
     )
-    loader = AutoregressiveLoader(dataset, batch_size=args.batch_size, autoreg_expansion_factor=args.autoreg_expansion_factor)
+
+    if args.train_mode == 'incremental':
+        loader = AutoregressiveLoader(dataset, batch_size=args.batch_size, autoreg_expansion_factor=args.autoreg_expansion_factor)
+    else:
+        loader = MultiStepLoader(dataset, batch_size=args.batch_size)
+    
     print(dataset.preprocessor.vocab_size, dataset.preprocessor.PAD_TOKEN)
+    print('Estimated steps:',len(loader))
     # Create model
     model = DecoderOnlyTransformer(
         num_layers=args.num_layers,
@@ -56,7 +65,8 @@ if __name__ == "__main__":
         num_heads=args.num_heads,
         hidden_dim=args.hidden_dim,
         quantized_classes=dataset.preprocessor.vocab_size,
-        padding_idx=dataset.preprocessor.PAD_TOKEN
+        padding_idx=dataset.preprocessor.PAD_TOKEN,
+        verbose_acts=args.verbose_acts
     )
 
     

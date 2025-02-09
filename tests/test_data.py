@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import modules from the parent directory
-from data import generate_time_series, generate_and_save_time_series, TSPreprocessor, MultiTimeSeriesDataset, AutoregressiveLoader
+from data import generate_time_series, generate_and_save_time_series, TSPreprocessor, MultiTimeSeriesDataset, AutoregressiveLoader, MultiStepLoader
 
 class TestData(unittest.TestCase):
 
@@ -180,7 +180,7 @@ class TestData(unittest.TestCase):
             self.assertEqual(metadata[i], loaded_metadata[i], f"Metadata {i} does not match the original.")
 
     def test_autoregressive_loader(self):
-        dataset = MultiTimeSeriesDataset(data_dir="data", max_training_length=32)
+        dataset = MultiTimeSeriesDataset(data_dir="test_time_series_data", max_training_length=32)
         loader = AutoregressiveLoader(dataset, batch_size=8)
 
         for x, y, attn_mask, padding_mask in loader:
@@ -197,7 +197,7 @@ class TestData(unittest.TestCase):
             MultiTimeSeriesDataset(data_dir="non_existent_dir", max_training_length=32)
 
     def test_attention_masks(self):
-        dataset = MultiTimeSeriesDataset(data_dir="data", max_training_length=32)
+        dataset = MultiTimeSeriesDataset(data_dir="test_time_series_data", max_training_length=32)
         loader = AutoregressiveLoader(dataset, batch_size=4)
         i = 0
         for x, y, attn_mask, padding_mask in loader:
@@ -223,6 +223,71 @@ class TestData(unittest.TestCase):
                         self.assertTrue(padding_mask[b_idx, s_idx].item(), "Padding mask should be True for PAD_TOKEN.")
                     else:
                         self.assertFalse(padding_mask[b_idx, s_idx].item(), "Padding mask should be False for non-PAD_TOKEN.")
+
+
+    
+    def test_contains_invalid_tokens(self):
+        dataset = MultiTimeSeriesDataset(data_dir="test_time_series_data", max_training_length=10)
+        loader = MultiStepLoader(dataset, batch_size=4)
+        for x, y, attn_mask, padding_mask in loader:
+            min_class_token = 0
+            max_class_token = dataset.preprocessor.num_classes - 1
+            for b_idx in range(x.size(0)):  # batch size
+                for s_idx in range(x.size(1)):  # sequence length
+                    if x[b_idx, s_idx] != dataset.preprocessor.PAD_TOKEN:
+                        self.assertTrue(x[b_idx, s_idx] >= min_class_token and x[b_idx, s_idx] <= max_class_token, "Token ID in x is neither pad nor valid quantized class")  
+
+            for b_idx in range(y.size(0)):  # batch size
+                for s_idx in range(y.size(1)):  # sequence length
+                    if y[b_idx, s_idx] != dataset.preprocessor.PAD_TOKEN:
+                        self.assertTrue(y[b_idx, s_idx] >= min_class_token and y[b_idx, s_idx] <= max_class_token, "Token ID in y is neither pad nor valid quantized class")         
+            
+
+    def test_multistep_loader(self):
+        dataset = MultiTimeSeriesDataset(data_dir="test_time_series_data", max_training_length=10)
+        loader = MultiStepLoader(dataset, batch_size=4)
+        i = 0
+        for x, y, attn_mask, padding_mask in loader:
+            i += 1
+            max_len = x.size(1)
+            self.assertEqual(attn_mask.size(), (max_len, max_len), "Attention mask dimensions are incorrect.")
+            #print(attn_mask.float())
+            self.assertTrue(
+                torch.allclose(
+                    attn_mask.float(), 
+                    (torch.triu(torch.ones((max_len, max_len)), diagonal=1).bool()).float()
+                ),
+                "Attention mask does not have correct triangular structure."
+            )
+
+
+            self.assertTrue(x.shape[0] <= 4, "Batch size more thanb configured value")
+            self.assertTrue(x.shape[0] == y.shape[0], "Batch dimension of x and y dont match")
+            self.assertTrue(x.shape[1] == y.shape[1], "Sequence dimension of x and y dont match")
+            self.assertTrue(padding_mask.shape[0] == x.shape[0], "Batch dimension of x and padding dont match")
+            self.assertTrue(padding_mask.shape[1] == x.shape[1], "Sequence dimension of x and padding dont match")
+
+            # If you are using x of shape [batch_size, seq_len], then you won't have x[i, j, 0].
+            # Adjust your check accordingly. For example:
+            for b_idx in range(x.size(0)):  # batch size
+                for s_idx in range(x.size(1)):  # sequence length
+                    if x[b_idx, s_idx].item() == dataset.preprocessor.PAD_TOKEN:
+                        self.assertTrue(padding_mask[b_idx, s_idx].item(), "Padding mask should be True for PAD_TOKEN.")
+                    else:
+                        self.assertFalse(padding_mask[b_idx, s_idx].item(), "Padding mask should be False for non-PAD_TOKEN.")
+
+            for b_idx in range(x.size(0)):  # batch size
+                for s_idx in range(x.size(1) - 1):  # sequence length
+                    
+                    if y[b_idx, s_idx].item() != dataset.preprocessor.PAD_TOKEN and x[b_idx, s_idx+1].item() != dataset.preprocessor.PAD_TOKEN:
+                        if(x[b_idx, s_idx+1] != y[b_idx, s_idx]):
+                            print('x:',x[b_idx,:])
+                            print('y',y[b_idx,:])
+                            print(b_idx, s_idx)
+                        
+                        self.assertEqual(x[b_idx, s_idx+1], y[b_idx, s_idx], "y is not at t+1 pos of x")        
+            
+        
 
 
 if __name__ == "__main__":
