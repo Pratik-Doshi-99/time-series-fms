@@ -1,3 +1,3 @@
 cd /home/mltrain/time-series-fms
 source train_env/bin/activate
-deepspeed main_dist.py --num_layers 12 --model_dim 768 --hidden_dim 2048 --num_heads 12 --epochs 1 --max_training_length 1024 --batch_size 16 --save_every 2000 --base_model_name "tsfm" --samples_per_file 10000 --warmup_steps 2000 --data_dir data --run_name "TSFM-12L-768Model-2048Hidden" --base_dir "TSFM-12L-768Model-2048Hidden" --autoreg_expansion_factor 1023 --data_parallel_workers 2
+deepspeed --hostfile=hostfile main_dist.py --num_layers 12 --model_dim 768 --hidden_dim 2048 --num_heads 12 --epochs 1 --max_training_length 1024 --batch_size 16 --save_every 2000 --base_model_name "tsfm" --samples_per_file 10000 --warmup_steps 2000 --data_dir data --run_name "TSFM-12L-768Model-2048Hidden" --base_dir "TSFM-12L-768Model-2048Hidden" --autoreg_expansion_factor 1023
