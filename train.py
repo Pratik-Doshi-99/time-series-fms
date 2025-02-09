@@ -27,7 +27,8 @@ def train_model(
     eta_min=1e-6,
     warmup_steps = 100,
     run_name = 'tsfm',
-    verbose_acts = False
+    verbose_acts = False,
+    weight_decay = 1e-4
 ):
     """
     Train the given model, with options for incremental or multi-step training modes.
@@ -61,7 +62,7 @@ def train_model(
 
     # Optimizer & Cosine LR Scheduler
     # optimizer = optim.Adam(model.parameters(), lr=lr)
-    optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
     # Using total training steps = epochs * number_of_batches for T_max
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 

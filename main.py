@@ -33,6 +33,7 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
     parser.add_argument("--autoreg_expansion_factor", type=int, default=50, help="When using autoregressive training, the factor by which the total samples will expand")
     parser.add_argument("--verbose_acts", action="store_true", help="If set to true, model prints stats on gradients and intermediate activations")
+    parser.add_argument("--weight_decay", type=float, default=1e-4, help="The weight decay coefficient")
     args = parser.parse_args()
 
     torch.autograd.set_detect_anomaly(True)
@@ -86,5 +87,6 @@ if __name__ == "__main__":
         eta_min=args.eta_min,
         warmup_steps=args.warmup_steps,
         run_name=args.run_name,
-        verbose_acts=args.verbose_acts
+        verbose_acts=args.verbose_acts,
+        weight_decay=args.weight_decay
     )
