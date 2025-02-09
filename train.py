@@ -60,8 +60,8 @@ def train_model(
     model.to(device)
 
     # Optimizer & Cosine LR Scheduler
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    #optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=1e-3)
+    # optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.SGD(model.parameters(), lr=lr, weight_decay=1e-4)
     # Using total training steps = epochs * number_of_batches for T_max
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 
