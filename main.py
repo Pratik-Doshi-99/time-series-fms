@@ -32,7 +32,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default=None, help="Device to use (cpu or cuda). If None, auto-detect.")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
     parser.add_argument("--autoreg_expansion_factor", type=int, default=50, help="When using autoregressive training, the factor by which the total samples will expand")
-    parser.add_argument("--verbose_acts", action="store_false", help="If set to true, model prints stats on gradients and intermediate activations")
+    parser.add_argument("--verbose_acts", action="store_true", help="If set to true, model prints stats on gradients and intermediate activations")
     args = parser.parse_args()
 
     torch.autograd.set_detect_anomaly(True)
