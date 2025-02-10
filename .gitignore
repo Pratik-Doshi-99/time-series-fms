@@ -178,3 +178,8 @@ wandb/*
 
 #tensor files
 *.pt
+
+
+activations.csv
+gradients.csv
+launch.json
