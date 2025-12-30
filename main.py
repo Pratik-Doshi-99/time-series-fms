@@ -25,7 +25,7 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", type=str, default="tsfm", help="W&B Run Name.")
     parser.add_argument("--base_model_name", type=str, default="model", help="Base name for checkpoint files.")
     parser.add_argument("--eta_min", type=float, default=1e-6, help="Min LR for cosine annealing.")
-    parser.add_argument("--data_dir", type=str, default="data",
+    parser.add_argument("--data_dir", type=str, default="synth-data",
                         help="Path to the preprocessed tensor file.")
     parser.add_argument("--samples_per_file", type=int, default=1000, help="The number of samples to create from a single .pt file in the data_dir")
     parser.add_argument("--warmup_steps", type=int, default=250, help="Number of warmup steps for LR.")

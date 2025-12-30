@@ -2,31 +2,63 @@
 
 This repository provides a **decoder-only Transformer** for modeling **quantized time-series data**. It includes:
 
-- **Data preprocessing** (normalization, quantization, and special tokens)  
-- **Two training paradigms**: incremental vs. multi-step  
-- **A Transformer-based model** (decoder-only) with **positional encoding**  
+- **Data preprocessing** (normalization, quantization, and special tokens)
+- **Two training paradigms**: incremental vs. multi-step
+- **A Transformer-based model** (decoder-only) with **positional encoding**
+- **Single-GPU and distributed training** support (with DeepSpeed)
 - **Scripts** to **train** the model and **test** its components
 
 ## Table of Contents
 
-1. [Data Preprocessing](#data-preprocessing)  
-   - [Normalization](#normalization)  
-   - [Quantization](#quantization)  
-   - [Special Tokens](#special-tokens)  
-2. [Training Approaches](#training-approaches)  
-   - [Incremental (Prefix) Approach](#incremental-prefix-approach)  
-   - [Multi-Step Approach](#multi-step-approach)  
-3. [Model Architecture](#model-architecture)  
-   - [Decoder-Only Transformer](#decoder-only-transformer)  
-   - [Positional Encoding](#positional-encoding)  
-4. [Running the Training Code](#running-the-training-code)  
-5. [Running Unit Tests](#running-unit-tests)
+1. [Repository Structure](#repository-structure)
+2. [Data Preprocessing](#data-preprocessing)
+   - [Normalization](#normalization)
+   - [Quantization](#quantization)
+   - [Special Tokens](#special-tokens)
+3. [Training Approaches](#training-approaches)
+   - [Incremental (Prefix) Approach](#incremental-prefix-approach)
+   - [Multi-Step Approach](#multi-step-approach)
+4. [Model Architecture](#model-architecture)
+   - [Decoder-Only Transformer](#decoder-only-transformer)
+   - [Positional Encoding](#positional-encoding)
+5. [Running the Training Code](#running-the-training-code)
+6. [Running Unit Tests](#running-unit-tests)
+
+
+## Repository Structure
+
+The repository is organized into the following subdirectories:
+
+```
+time-series-fms/
+├── data/               # Data generation and loading
+│   └── dataset.py      # TSPreprocessor, Dataset, DataLoaders
+├── models/             # Model definitions
+│   └── model.py        # DecoderOnlyTransformer, PositionalEncoding
+├── training/           # Training loops and entry points
+│   ├── main.py         # Single-GPU training entry point
+│   ├── main_dist.py    # Distributed training entry point
+│   ├── train.py        # Single-GPU training loop
+│   └── dist_train.py   # Distributed training with DeepSpeed
+├── scripts/            # Shell scripts for running programs
+│   ├── generate_data.sh
+│   ├── train_size1.sh
+│   ├── train_size2.sh
+│   ├── train_size3.sh
+│   └── dist_train_size3.sh
+├── exploration/        # Jupyter notebooks for analysis
+│   ├── gradient_analysis.ipynb
+│   ├── test_saved_model.ipynb
+│   └── tsfm_demo.ipynb
+├── tests/              # Unit tests
+└── utils.py            # Utility functions
+```
 
 
 
 ## Data Preprocessing
 
-All data preprocessing steps are handled by the **`TSPreprocessor`** in `data.py`. The major steps are **normalization**, **quantization**, and optionally inserting **special tokens**.
+All data preprocessing steps are handled by the **`TSPreprocessor`** in `data/dataset.py`. The major steps are **normalization**, **quantization**, and optionally inserting **special tokens**.
 
 ### Normalization
 
@@ -95,7 +127,7 @@ A causal mask ensures that future tokens cannot be seen at each time step. We th
 
 ### Decoder-Only Transformer
 
-We use a **decoder-only** architecture, similar to GPT-style language models. In `model.py`:
+We use a **decoder-only** architecture, similar to GPT-style language models. In `models/model.py`:
 
 - **Embedding**: `nn.Embedding(quantized_classes, model_dim)` maps each integer token to a vector.  
 - **Positional Encoding**: We add a sine/cosine positional encoding to each embedding.  
@@ -120,25 +152,53 @@ These values are added to the embedded tokens before they enter the Transformer 
    - PyTorch (1.9+ recommended)  
    - NumPy, Matplotlib (for optional plotting)
 
-2. **Train the Model**  
-   - The main entry point is **`main.py`**. By default, it does the following:
-     1. Synthesizes time-series data with `generate_time_series`.  
-     2. Preprocesses (normalizes + quantizes) them and saves to `preprocessed_data.pt`.  
-     3. Creates a `MultiTimeSeriesDataset` and either:
-        - Uses the **incremental** `AutoregressiveLoader`, or
-        - Uses the **multi-step** loader (e.g., `MultiStepLoader`).  
-     4. Builds the decoder-only Transformer.  
-     5. Trains for a specified number of epochs, printing the loss each epoch.
+2. **Generate Training Data**
+   - First, generate synthetic time-series data using the provided script:
 
-   - You can choose **incremental** or **multi-step** by editing the code or a flag inside `main.py`.  
-   - Then run:
-
-     ```
-     python main.py
+     ```bash
+     bash scripts/generate_data.sh
      ```
 
-3. **Hyperparameters**  
-   - You can adjust hyperparameters such as `model_dim`, `num_layers`, `num_heads`, `epochs` inside `main.py` or in the train functions.
+   - This will create preprocessed data files in the `synth-data/` directory.
+
+3. **Train the Model**
+
+   **Single-GPU Training:**
+   - The main entry point is **`training/main.py`** which supports command-line arguments for all hyperparameters.
+   - You can use the provided training scripts or run directly:
+
+     ```bash
+     # Using a training script
+     bash scripts/train_size2.sh
+
+     # Or run directly with custom arguments
+     python training/main.py \
+       --num_layers 4 \
+       --model_dim 256 \
+       --hidden_dim 1024 \
+       --num_heads 16 \
+       --epochs 2 \
+       --max_training_length 1024 \
+       --batch_size 16 \
+       --data_dir synth-data \
+       --train_mode multi-step
+     ```
+
+   **Distributed Training (DeepSpeed):**
+   - For multi-GPU training, use `training/main_dist.py`:
+
+     ```bash
+     # Using the distributed training script
+     bash scripts/dist_train_size3.sh
+
+     # Or run directly
+     deepspeed --hostfile=hostfile training/main_dist.py \
+       --num_layers 12 \
+       --model_dim 768 \
+       --hidden_dim 2048 \
+       --batch_size 16 \
+       --data_dir synth-data
+     ```
 
 
 
@@ -166,5 +226,12 @@ python -m unittest test_train.py
 ```
 
 
+## Roadmap
 
-**Enjoy experimenting** with this decoder-only time-series Transformer! If you have questions or want to contribute, please open an issue or pull request.
+The following things are under development.
+
+- [ ] Add validation split, and monitor validation performance when training
+- [ ] Add MSE metric, and monitor during training
+- [ ] Add tracking of gradient norms, dead neurons and 0 gradients during training
+- [ ] Add support for gradient accumulation across mini-batches (to increase the effective batch size)
+- [ ] Add SynthTS 
