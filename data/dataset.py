@@ -422,7 +422,7 @@ if __name__ == '__main__':
     parser.add_argument("--samples_per_file", type=int, default=1000, help="Samples to save in a single file")
     parser.add_argument("--min_len", type=int, default=50, help="Minimum time steps in a sample.")
     parser.add_argument("--max_len", type=int, default=50, help="Maximum time steps in a sample.")
-    parser.add_argument("--base_dir", type=str, default='data', help="Base directory")
+    parser.add_argument("--base_dir", type=str, default='synth_data', help="Base directory")
     args = parser.parse_args()
     
     generate_and_save_time_series(

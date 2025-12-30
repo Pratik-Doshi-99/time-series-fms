@@ -7,10 +7,10 @@ import os
 import deepspeed
 
 # Local imports from your project
-from data import (generate_time_series, TSPreprocessor, MultiTimeSeriesDataset,
+from data.dataset import (generate_time_series, TSPreprocessor, MultiTimeSeriesDataset,
                   AutoregressiveLoader, MultiStepLoader)
-from model import DecoderOnlyTransformer
-from dist_train import train_model_deepseek  # The new deepseek training function you wrote
+from models.model import DecoderOnlyTransformer
+from training.dist_train import train_model_deepseek  # The new deepseek training function you wrote
 
 
 '''

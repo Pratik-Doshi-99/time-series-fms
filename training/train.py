@@ -5,11 +5,11 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 from typing import Union
-from data import MultiStepLoader, AutoregressiveLoader
+from data.dataset import MultiStepLoader, AutoregressiveLoader
 import wandb
 import csv
 from utils import create_training_directory, log_to_csv
-from model import DecoderOnlyTransformer
+from models.model import DecoderOnlyTransformer
 
 
 def train_model(

@@ -1,9 +1,9 @@
 # main.py
 
-from data import (generate_time_series, TSPreprocessor, MultiTimeSeriesDataset, 
+from data.dataset import (generate_time_series, TSPreprocessor, MultiTimeSeriesDataset,
                   AutoregressiveLoader, MultiStepLoader)
-from model import DecoderOnlyTransformer
-from train import train_model
+from models.model import DecoderOnlyTransformer
+from training.train import train_model
 import random
 import torch
 import argparse
