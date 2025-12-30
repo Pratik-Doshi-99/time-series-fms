@@ -8,19 +8,77 @@ from typing import Union
 from data.dataset import MultiStepLoader, AutoregressiveLoader
 import wandb
 import csv
+from tqdm import tqdm
 from utils import create_training_directory, log_to_csv
 from models.model import DecoderOnlyTransformer
+from training.training_extension import MetricsAggregation
+
+
+def validation_step(model, val_loader, criterion, device, train_mode="incremental"):
+    """
+    Execute validation loop and return aggregated validation metrics.
+
+    Args:
+        model: The model to validate
+        val_loader: Validation data loader
+        criterion: Loss function
+        device: Device to run validation on
+        train_mode: 'incremental' or 'multi-step'
+
+    Returns:
+        Dictionary of aggregated validation metrics
+    """
+    model.eval()
+    metrics_aggregator = MetricsAggregation()
+
+    with torch.no_grad():
+        for x, y, attn_mask, padding_mask in tqdm(val_loader, desc="Validation", leave=False):
+            # Move data to device
+            x = x.to(device)
+            y = y.to(device)
+            attn_mask = attn_mask.to(device)
+            padding_mask = padding_mask.to(device)
+
+            # Forward pass
+            output = model(x, attn_mask=attn_mask, padding_mask=padding_mask)
+
+            # Compute loss
+            if train_mode == "incremental":
+                last_logits = output[:, -1, :]
+                last_target = y[:, -1]
+                loss = criterion(last_logits, last_target)
+            else:  # "multi-step"
+                logits = output.transpose(1, 2)
+                loss = criterion(logits, y)
+
+            # Accumulate metrics
+            val_metrics = {
+                'val_loss': loss.cpu().item()
+            }
+            metrics_aggregator.accumulate(val_metrics)
+
+            # Clean up memory
+            del loss, output, x, y, attn_mask, padding_mask
+            torch.cuda.empty_cache()
+
+    # Aggregate and return metrics
+    aggregated_val_metrics = metrics_aggregator.aggregate('mean')
+    model.train()
+
+    return aggregated_val_metrics
 
 
 def train_model(
     model: DecoderOnlyTransformer, 
-    train_loader: Union["MultiStepLoader", "AutoregressiveLoader"],  
+    train_loader: Union["MultiStepLoader", "AutoregressiveLoader"], 
+    val_loader: Union["MultiStepLoader", "AutoregressiveLoader"], 
     device, 
     epochs=1,
     train_mode="incremental",
     # Additional parameters for improved training loop
     lr=1e-4,
     save_every=15,
+    val_every=15,
     verbose=False,
     base_dir="checkpoints", 
     base_model_name="model",
@@ -88,6 +146,9 @@ def train_model(
     time_load_next_batch_prev = 0.0
     model.train()
 
+    # Initialize metrics aggregation
+    metrics_aggregator = MetricsAggregation()
+
     for epoch in range(epochs):
 
         for x, y, attn_mask, padding_mask in train_loader:
@@ -147,7 +208,7 @@ def train_model(
 
             t5 = time.time()
             #memory clean up
-            loss_val = loss.item()
+            loss_val = loss.cpu().item()
             del loss, output, x, y, attn_mask, padding_mask
             torch.cuda.empty_cache()
             t_clear_mem = time.time() - t5
@@ -166,26 +227,46 @@ def train_model(
                 t_save_model = time.time() - t_save
                 print(f"[INFO] Saved checkpoint at: {checkpoint_path}")
 
-            log_dict = {
-                'global_step': global_step,
+            # Prepare metrics for accumulation
+            step_metrics = {
                 'train_loss': loss_val,
                 'lr': scheduler.get_last_lr()[0],
-
-                # Current iteration's critical times
                 'time/data_to_device': t_data_to_device,
                 'time/forward_pass': t_forward,
                 'time/loss_computation': t_loss,
                 'time/backward_pass': t_backward,
                 'time/optimizer_step': t_optimizer_step,
                 "time/memory_clear": t_clear_mem,
-                # Lagged logs
                 'time/load_next_batch': time_load_next_batch_prev
             }
             if t_save_model is not None:
-                log_dict['time/model_save_to_disk'] = t_save_model
+                step_metrics['time/model_save_to_disk'] = t_save_model
 
+            # Accumulate metrics
+            metrics_aggregator.accumulate(step_metrics)
 
-            wandb.log(log_dict)
+            # Log aggregated metrics every val_every steps
+            if (global_step % val_every) == 0:
+                # Get aggregated training metrics
+                aggregated_train_metrics = metrics_aggregator.aggregate('mean')
+
+                # Run validation and get validation metrics
+                print(f"[INFO] Running validation at step {global_step}...")
+                val_metrics = validation_step(model, val_loader, criterion, device, train_mode)
+
+                # Combine training and validation metrics
+                combined_metrics = {**aggregated_train_metrics, **val_metrics}
+                combined_metrics['global_step'] = global_step
+
+                # Log to wandb
+                wandb.log(combined_metrics)
+
+                # Clear training metrics accumulator
+                metrics_aggregator.clear()
+
+                print(f"[INFO] Logged aggregated metrics at step {global_step}: "
+                      f"train_loss={aggregated_train_metrics['train_loss']:.4f}, "
+                      f"val_loss={val_metrics['val_loss']:.4f}")
             
             if global_step > warmup_steps:
                 scheduler.step()

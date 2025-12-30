@@ -16,18 +16,22 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_dim", type=int, default=64, help="Dimension of the feed-forward layer.")
     parser.add_argument("--epochs", type=int, default=1, help="Number of epochs to train.")
     parser.add_argument("--max_training_length", type=int, default=64, help="Max sequence length for training data.")
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size.")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for training.")
+    parser.add_argument("--val_batch_size", type=int, default=None, help="Batch size for validation. If None, uses batch_size.")
     parser.add_argument("--lr", type=float, default=1e-4, help="Initial learning rate.")
     parser.add_argument("--save_every", type=int, default=100, help="Save a checkpoint every N steps.")
+    parser.add_argument("--validate_every", type=int, default=100, help="Run validation dataset every N steps.")
     parser.add_argument("--train_mode", type=str, default="multi-step", choices=["incremental", "multi-step"],
                         help="Training mode for the loop.")
     parser.add_argument("--base_dir", type=str, default="checkpoints", help="Directory where checkpoints are saved.")
     parser.add_argument("--run_name", type=str, default="tsfm", help="W&B Run Name.")
     parser.add_argument("--base_model_name", type=str, default="model", help="Base name for checkpoint files.")
     parser.add_argument("--eta_min", type=float, default=1e-6, help="Min LR for cosine annealing.")
-    parser.add_argument("--data_dir", type=str, default="synth-data",
-                        help="Path to the preprocessed tensor file.")
-    parser.add_argument("--samples_per_file", type=int, default=1000, help="The number of samples to create from a single .pt file in the data_dir")
+    parser.add_argument("--train_dir", type=str, default="synth-data-train",
+                        help="Path to the training data directory.")
+    parser.add_argument("--val_dir", type=str, default="synth-data-val",
+                        help="Path to the validation data directory.")
+    parser.add_argument("--samples_per_file", type=int, default=1000, help="The number of samples to create from a single .pt file in the data directory")
     parser.add_argument("--warmup_steps", type=int, default=250, help="Number of warmup steps for LR.")
     parser.add_argument("--device", type=str, default=None, help="Device to use (cpu or cuda). If None, auto-detect.")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
@@ -35,6 +39,7 @@ if __name__ == "__main__":
     parser.add_argument("--verbose_acts", action="store_true", help="If set to true, model prints stats on gradients and intermediate activations")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="The weight decay coefficient")
     parser.add_argument("--optimizer", type=str, default="adam", choices=["adam", "sgd"])
+    parser.add_argument("--num_workers", type=int, default=4, help="Number of worker processes for data loading")
     args = parser.parse_args()
 
     torch.autograd.set_detect_anomaly(True)
@@ -46,42 +51,61 @@ if __name__ == "__main__":
         device = torch.device(args.device)
     print(f"Using device: {device}")
 
-    # Create dataset & loader
-    dataset = MultiTimeSeriesDataset(
-        data_dir=args.data_dir,
+    # Create training dataset & loader
+    train_dataset = MultiTimeSeriesDataset(
+        data_dir=args.train_dir,
         num_samples_per_file=args.samples_per_file,
         max_training_length=args.max_training_length
     )
 
     if args.train_mode == 'incremental':
-        loader = AutoregressiveLoader(dataset, batch_size=args.batch_size, autoreg_expansion_factor=args.autoreg_expansion_factor)
+        train_loader = AutoregressiveLoader(train_dataset, batch_size=args.batch_size, autoreg_expansion_factor=args.autoreg_expansion_factor)
     else:
-        loader = MultiStepLoader(dataset, batch_size=args.batch_size)
-    
-    print(dataset.preprocessor.vocab_size, dataset.preprocessor.PAD_TOKEN)
-    print('Estimated steps:',len(loader))
+        train_loader = MultiStepLoader(train_dataset, batch_size=args.batch_size)
+
+    # Create validation dataset & loader
+    val_dataset = MultiTimeSeriesDataset(
+        data_dir=args.val_dir,
+        num_samples_per_file=args.samples_per_file,
+        max_training_length=args.max_training_length
+    )
+
+    # Use val_batch_size if specified, otherwise use batch_size
+    val_batch_size = args.val_batch_size if args.val_batch_size is not None else args.batch_size
+
+    if args.train_mode == 'incremental':
+        val_loader = AutoregressiveLoader(val_dataset, batch_size=val_batch_size, autoreg_expansion_factor=args.autoreg_expansion_factor)
+    else:
+        val_loader = MultiStepLoader(val_dataset, batch_size=val_batch_size)
+
+    print(train_dataset.preprocessor.vocab_size, train_dataset.preprocessor.PAD_TOKEN)
+    print('Estimated training steps:',len(train_loader))
+    print('Estimated validation steps:',len(val_loader))
     # Create model
     model = DecoderOnlyTransformer(
         num_layers=args.num_layers,
         model_dim=args.model_dim,
         num_heads=args.num_heads,
         hidden_dim=args.hidden_dim,
-        quantized_classes=dataset.preprocessor.vocab_size,
-        padding_idx=dataset.preprocessor.PAD_TOKEN,
+        quantized_classes=train_dataset.preprocessor.vocab_size,
+        padding_idx=train_dataset.preprocessor.PAD_TOKEN,
         verbose_acts=args.verbose_acts
     )
 
-    
+
+    print(args)
 
     # Train
     train_model(
         model,
-        loader,
+        train_loader,
+        val_loader,
         device=device,
         epochs=args.epochs,
         train_mode=args.train_mode,
         lr=args.lr,
         save_every=args.save_every,
+        val_every=args.validate_every,
         verbose=args.verbose,
         base_dir=args.base_dir,
         base_model_name=args.base_model_name,
