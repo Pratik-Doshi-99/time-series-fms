@@ -11,7 +11,7 @@ import csv
 from tqdm import tqdm
 from utils import create_training_directory, log_to_csv
 from models.model import DecoderOnlyTransformer
-from training.training_extension import MetricsAggregation
+from training.training_extension import MetricsAggregation, calculate_accuracy
 
 
 def validation_step(model, val_loader, criterion, device, train_mode="incremental"):
@@ -53,7 +53,8 @@ def validation_step(model, val_loader, criterion, device, train_mode="incrementa
 
             # Accumulate metrics
             val_metrics = {
-                'val_loss': loss.cpu().item()
+                'val_loss': loss.cpu().item(),
+                'val_acc': calculate_accuracy(logits, y, padding_mask)
             }
             metrics_aggregator.accumulate(val_metrics)
 
@@ -209,7 +210,8 @@ def train_model(
             t5 = time.time()
             #memory clean up
             loss_val = loss.cpu().item()
-            del loss, output, x, y, attn_mask, padding_mask
+            accuracy = calculate_accuracy(logits, y, padding_mask)
+            del loss, output, x, y, attn_mask, padding_mask, logits
             torch.cuda.empty_cache()
             t_clear_mem = time.time() - t5
 
@@ -230,6 +232,7 @@ def train_model(
             # Prepare metrics for accumulation
             step_metrics = {
                 'train_loss': loss_val,
+                'train_acc': accuracy,
                 'lr': scheduler.get_last_lr()[0],
                 'time/data_to_device': t_data_to_device,
                 'time/forward_pass': t_forward,
@@ -273,7 +276,8 @@ def train_model(
 
             print(
                 f"[Global Step {global_step}] "
-                f"Loss: {loss_val:.4f} | "
+                f"Loss: {loss_val:.6f} | "
+                f"Acc: {accuracy:.6f} | "
                 f"LR: {optimizer.param_groups[0]['lr']:.6f} "
                 f"Epoch: {epoch+1}/{epochs} "
             )

@@ -1,4 +1,20 @@
 from typing import Dict, List
+import torch
+
+
+@torch.no_grad()
+def calculate_accuracy(predicted_logits, target_classes, pad_mask):
+    # predicted_logits: batch, seq, classes
+    # target_classes: batch, seq
+    # pad_mask: batch, seq
+    #print(predicted_logits.shape, target_classes.shape, pad_mask.shape)
+    predicted_tokens = predicted_logits.argmax(dim=1) #batch, seq
+    total_padded = pad_mask.sum()
+    correct_predictions = (predicted_tokens == target_classes) | pad_mask
+    accuracy = (correct_predictions.sum() - total_padded) / (target_classes.numel() - total_padded + 1e-6)
+
+    return accuracy.cpu().item()
+
 
 
 class MetricsAggregation:
@@ -47,3 +63,29 @@ class MetricsAggregation:
     def clear(self) -> None:
         """Clear all accumulated metrics."""
         self._metrics.clear()
+
+
+
+if __name__ == '__main__':
+    pred = [
+        [[0.9,0.1,0.2],[0.8,0.9,0.6],[0.1,0.2,0.3]],
+        [[0.8,0.9,0.6],[0.1,0.2,0.3],[0.1,0.2,0.3]]
+    ]
+
+    actual = [
+        [0,1,2],
+        [1,2,2]
+    ]
+
+    pad_mask = [
+        [0,0,0],
+        [0,0,0]
+    ]
+
+    pred = torch.tensor(pred, device='cuda:0')
+    actual = torch.tensor(actual, device='cuda:0')
+    pad_mask = torch.tensor(pad_mask, device='cuda:0')
+
+    accuracy = round(calculate_accuracy(pred, actual, pad_mask), 6)
+
+    print('Accuracy:',accuracy)
