@@ -7,9 +7,12 @@ import datetime
 import os
 
 # Configuration
-LOG_FILE = "gpu_log.csv"
+DEFAULT_LOG_FILE = "gpu_log.csv"
 INTERVAL_SEC = 1
 FLUSH_INTERVAL_SEC = 10  # Force write to disk every 10 seconds
+
+# Allow custom log file from command line
+LOG_FILE = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_LOG_FILE
 
 def check_rocm_smi():
     """Verifies that rocm-smi is installed."""

@@ -1,0 +1,23 @@
+[Unit]
+Description=Time Series FMS Training Job
+After=network.target
+
+[Service]
+Type=simple
+User=pratikdoshi
+Group=pratikdoshi
+WorkingDirectory=/home/pratikdoshi/projects/time-series-fms
+
+# Run the training script
+ExecStart=/bin/bash /home/pratikdoshi/projects/time-series-fms/scripts/train.sh
+
+# Restart policy
+Restart=no
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=training
+
+[Install]
+WantedBy=multi-user.target

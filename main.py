@@ -7,6 +7,7 @@ from training.train import train_model
 import random
 import torch
 import argparse
+import os
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a Decoder-Only Transformer model.")
@@ -40,6 +41,8 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="The weight decay coefficient")
     parser.add_argument("--optimizer", type=str, default="adam", choices=["adam", "sgd"])
     parser.add_argument("--num_workers", type=int, default=4, help="Number of worker processes for data loading")
+    parser.add_argument("--pretrained_model", type=str, default=None, help="Path to a pretrained model checkpoint to load before training")
+    parser.add_argument("--start_global_step", type=int, default=0, help="Starting global step (useful when resuming training)")
     args = parser.parse_args()
 
     torch.autograd.set_detect_anomaly(True)
@@ -92,6 +95,28 @@ if __name__ == "__main__":
         verbose_acts=args.verbose_acts
     )
 
+    # Load pretrained model if specified
+    if args.pretrained_model is not None:
+        if not os.path.exists(args.pretrained_model):
+            print(f"Error: Pretrained model not found at: {args.pretrained_model}")
+            exit(1)
+
+        print(f"Loading pretrained model from: {args.pretrained_model}")
+        try:
+            checkpoint = torch.load(args.pretrained_model, map_location='cpu')
+
+            # Handle different checkpoint formats
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            else:
+                state_dict = checkpoint
+
+            # Load the state dict with strict=True only
+            model.load_state_dict(state_dict, strict=True)
+            print("Successfully loaded pretrained weights")
+        except Exception as e:
+            print(f"Error: Failed to load pretrained model with strict=True: {e}")
+            exit(1)
 
     print(args)
 
@@ -114,5 +139,6 @@ if __name__ == "__main__":
         run_name=args.run_name,
         verbose_acts=args.verbose_acts,
         weight_decay=args.weight_decay,
-        optimizer_type=args.optimizer
+        optimizer_type=args.optimizer,
+        start_global_step=args.start_global_step
     )

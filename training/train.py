@@ -12,6 +12,8 @@ from tqdm import tqdm
 from utils import create_training_directory, log_to_csv
 from models.model import DecoderOnlyTransformer
 from training.training_extension import MetricsAggregation, calculate_accuracy
+import signal
+import sys
 
 
 def validation_step(model, val_loader, criterion, device, train_mode="incremental"):
@@ -70,10 +72,10 @@ def validation_step(model, val_loader, criterion, device, train_mode="incrementa
 
 
 def train_model(
-    model: DecoderOnlyTransformer, 
-    train_loader: Union["MultiStepLoader", "AutoregressiveLoader"], 
-    val_loader: Union["MultiStepLoader", "AutoregressiveLoader"], 
-    device, 
+    model: DecoderOnlyTransformer,
+    train_loader: Union["MultiStepLoader", "AutoregressiveLoader"],
+    val_loader: Union["MultiStepLoader", "AutoregressiveLoader"],
+    device,
     epochs=1,
     train_mode="incremental",
     # Additional parameters for improved training loop
@@ -81,14 +83,15 @@ def train_model(
     save_every=15,
     val_every=15,
     verbose=False,
-    base_dir="checkpoints", 
+    base_dir="checkpoints",
     base_model_name="model",
     eta_min=1e-6,
     warmup_steps = 100,
     run_name = 'tsfm',
     verbose_acts = False,
     weight_decay = 1e-4,
-    optimizer_type = 'adam'
+    optimizer_type = 'adam',
+    start_global_step = 0
 ):
     """
     Train the given model, with options for incremental or multi-step training modes.
@@ -117,6 +120,20 @@ def train_model(
     run_name = f"{run_name}_{name_counter}"
     wandb.init(project="Time-Series-FMs", name=run_name)
 
+    # Signal handler for graceful shutdown
+    def signal_handler(signum, frame):
+        print(f"\n[INFO] Received signal {signum}. Finishing WandB run and exiting gracefully...")
+        try:
+            wandb.finish(exit_code=1, quiet=True)
+        except Exception as e:
+            # Suppress WandB errors during shutdown (e.g., BrokenPipeError)
+            print(f"[WARNING] WandB finish failed (expected during forced shutdown): {type(e).__name__}")
+        sys.exit(0)
+
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
     # Move model to device
     model.to(device)
 
@@ -137,8 +154,8 @@ def train_model(
     # We use the same criterion as in the original code
     criterion = nn.CrossEntropyLoss(ignore_index=train_loader.dataset.preprocessor.PAD_TOKEN)
 
-    print('Starting training...')
-    global_step = 0
+    print(f'Starting training from step {start_global_step}...')
+    global_step = start_global_step
 
     # ----------------------------------------------------------------------
     #  Variables to track lagged time measurements (similar to second sample)
@@ -261,8 +278,8 @@ def train_model(
                 combined_metrics = {**aggregated_train_metrics, **val_metrics}
                 combined_metrics['global_step'] = global_step
 
-                # Log to wandb
-                wandb.log(combined_metrics)
+                # Log to wandb with explicit step
+                wandb.log(combined_metrics, step=global_step)
 
                 # Clear training metrics accumulator
                 metrics_aggregator.clear()

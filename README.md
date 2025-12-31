@@ -234,4 +234,4 @@ The following things are under development.
 - [ ] Add MSE metric, and monitor during training
 - [ ] Add tracking of gradient norms, dead neurons and 0 gradients during training
 - [ ] Add support for gradient accumulation across mini-batches (to increase the effective batch size)
-- [ ] Add SynthTS 
+- [ ] Create an auto-restart system that can restart training from the latest optimizer, lr global step checkpoint. Also append to same WandB run 

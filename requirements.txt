@@ -45,3 +45,4 @@ typing_extensions==4.12.2
 urllib3==2.3.0
 wandb==0.19.5
 tqdm
+jupyterlab
