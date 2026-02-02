@@ -9,7 +9,7 @@ from data.dataset import MultiStepLoader, AutoregressiveLoader
 import wandb
 import csv
 from tqdm import tqdm
-from utils import create_training_directory, log_to_csv
+from utils.core import create_training_directory, log_to_csv
 from models.model import DecoderOnlyTransformer
 from training.training_extension import MetricsAggregation, calculate_accuracy
 import signal
