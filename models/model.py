@@ -39,7 +39,7 @@ class DecoderOnlyTransformer(nn.Module):
         self.pos_encoding = PositionalEncoding(d_model=model_dim)
         self.verbose_acts = verbose_acts
         self.layers = nn.ModuleList([
-            nn.TransformerDecoderLayer(
+            nn.TransformerEncoderLayer(
                 d_model=model_dim, 
                 nhead=num_heads, 
                 dim_feedforward=hidden_dim,
@@ -81,10 +81,10 @@ class DecoderOnlyTransformer(nn.Module):
         i = 1
         for layer in self.layers:
             x = layer(
-                tgt=x, 
-                memory=x, 
-                tgt_mask=attn_mask, 
-                tgt_key_padding_mask=padding_mask
+                src=x, 
+                src_mask=attn_mask, 
+                src_key_padding_mask=padding_mask,
+                is_causal=True
             )
             if self.verbose_acts and act_dir:
                 with torch.no_grad():
