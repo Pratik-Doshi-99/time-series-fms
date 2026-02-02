@@ -3,7 +3,7 @@
 import math
 import torch
 import torch.nn as nn
-from utils import log_to_csv
+from utils.core import log_to_csv
 import os
 
 class PositionalEncoding(nn.Module):

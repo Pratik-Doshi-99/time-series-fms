@@ -8,6 +8,7 @@ import math
 import glob
 import argparse
 import math
+from utils.core import get_causal_mask
 
 def generate_time_series(length, drift=0.0, cycle_amplitude=0.0, noise_std=0.1, trend_slope=0.0, frequency=1.0, bias=0.0):
     time = np.arange(length)
@@ -406,7 +407,7 @@ class MultiStepLoader:
 
         # Create a causal attention mask for the max_seq_len
         seq_len = x_padded.shape[1]
-        attn_mask = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.bool), diagonal=1)
+        attn_mask = get_causal_mask(seq_len)
         #attn_mask = ~attn_mask  # invert => lower-triangular False => allowed
 
         # Key padding mask (True = ignore)
