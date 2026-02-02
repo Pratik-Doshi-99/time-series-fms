@@ -1,5 +1,12 @@
+import torch
+
 import csv
 import os
+
+
+def get_causal_mask(seq_length):
+    attn_mask = torch.triu(torch.ones((seq_length, seq_length), dtype=torch.bool), diagonal=1)
+    return attn_mask
 
 def log_to_csv(filename, data):
     """
