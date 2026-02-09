@@ -17,6 +17,7 @@ import torch
 import torch.nn.functional as F
 from models.model import DecoderOnlyTransformer
 from data.dataset import TSPreprocessor
+from utils.core import get_causal_mask
 
 
 def load_model(
@@ -49,6 +50,41 @@ def load_benchmark_category(file_path: str) -> dict:
     return torch.load(file_path, weights_only=False)
 
 
+def detect_and_preprocess_data(data: dict, preprocessor: TSPreprocessor) -> tuple:
+    """
+    Detect if benchmark data is raw or preprocessed, and preprocess if needed.
+
+    Args:
+        data: Benchmark data dictionary with 'tensors' key
+        preprocessor: TSPreprocessor instance for preprocessing
+
+    Returns:
+        (preprocessed_tensors, metadata_list)
+    """
+    tensors = data["tensors"]
+
+    # Detect data type: raw (float) vs preprocessed (int)
+    is_raw = (tensors.dtype == torch.float32 or tensors.dtype == torch.float64)
+
+    if is_raw:
+        # Preprocess each series
+        preprocessed_tensors = []
+        metadata_list = []
+
+        for series in tensors:
+            series_np = series.numpy()
+            tensor, meta = preprocessor.preprocess_series(series_np)
+            preprocessed_tensors.append(tensor)
+            metadata_list.append(meta)
+
+        return preprocessed_tensors, metadata_list
+    else:
+        # Already preprocessed - create dummy metadata
+        metadata_list = [{"min_val": 0.0, "max_val": 1.0, "mean_val": 0.5, "std_val": 0.3}
+                         for _ in range(len(tensors))]
+        return list(tensors), metadata_list
+
+
 def compute_metrics(
     model: DecoderOnlyTransformer,
     tensors: list,
@@ -56,6 +92,8 @@ def compute_metrics(
     context_length: int = 128,
     device: str = "cuda",
     num_classes: int = 100,
+    model_config: dict = None,
+    batch_size: int = 64,
 ) -> dict:
     """
     Compute evaluation metrics for a set of time series.
@@ -67,6 +105,7 @@ def compute_metrics(
         context_length: Number of tokens to use as context for prediction
         device: Device to run on
         num_classes: Number of quantization classes
+        model_config: Model configuration dict (for PAD_TOKEN calculation)
 
     Returns:
         Dictionary containing various metrics
@@ -89,10 +128,18 @@ def compute_metrics(
 
         # Predict each token after context_length
         for t in range(context_length, len(tensor) - 1):
-            context = tensor[:t].unsqueeze(0)
+            context = tensor[:t].unsqueeze(0)  # [1, seq_len]
+
+            # Compute causal attention mask for this context length
+            seq_len = context.shape[1]
+            attn_mask = get_causal_mask(seq_len).to(device)  # [seq_len, seq_len]
+
+            # Compute padding mask (PAD_TOKEN = num_classes + 2)
+            pad_token = model_config["num_classes"] + 2 if model_config else num_classes + 2
+            padding_mask = (context == pad_token).to(device)  # [1, seq_len]
 
             with torch.no_grad():
-                logits = model(context)
+                logits = model(context, attn_mask=attn_mask, padding_mask=padding_mask)
                 pred_logits = logits[0, -1, :]  # Last position logits
 
                 # Get prediction (argmax)
@@ -191,6 +238,13 @@ def run_benchmark(
         **model_config,
     )
 
+    # Initialize preprocessor for raw data handling
+    preprocessor = TSPreprocessor(
+        num_classes=model_config["num_classes"],
+        add_bos=False,
+        add_eos=False
+    )
+
     # Find all benchmark files
     benchmark_files = [
         f for f in os.listdir(benchmark_dir)
@@ -230,13 +284,19 @@ def run_benchmark(
         print(f"\n{category_name}:")
         print(f"  Pattern: {pattern}, Length: {series_length}, Samples: {len(data['tensors'])}")
 
+        # Preprocess data if needed (handles both raw and preprocessed)
+        preprocessed_tensors, metadata_list = detect_and_preprocess_data(
+            data, preprocessor
+        )
+
         metrics = compute_metrics(
             model=model,
-            tensors=data["tensors"],
-            metadata=data["metadata"],
+            tensors=preprocessed_tensors,
+            metadata=metadata_list,
             context_length=context_length,
             device=device,
             num_classes=model_config["num_classes"],
+            model_config=model_config,
         )
 
         results["categories"][category_name] = {

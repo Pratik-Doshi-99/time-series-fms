@@ -1,0 +1,23 @@
+[Unit]
+Description=Time Series FMS Benchmark Job
+After=network.target
+
+[Service]
+Type=simple
+User=pratikdoshi
+Group=pratikdoshi
+WorkingDirectory=/home/pratikdoshi/projects/time-series/time-series-fms
+
+# Run the benchmark script
+ExecStart=/bin/bash /home/pratikdoshi/projects/time-series/time-series-fms/scripts/benchmark.sh
+
+# Restart policy
+Restart=no
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=benchmark
+
+[Install]
+WantedBy=multi-user.target

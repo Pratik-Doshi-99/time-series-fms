@@ -22,7 +22,8 @@ This repository provides a **decoder-only Transformer** for modeling **quantized
    - [Decoder-Only Transformer](#decoder-only-transformer)
    - [Positional Encoding](#positional-encoding)
 5. [Running the Training Code](#running-the-training-code)
-6. [Running Unit Tests](#running-unit-tests)
+6. [Running Benchmarks](#running-benchmarks)
+7. [Running Unit Tests](#running-unit-tests)
 
 
 ## Repository Structure
@@ -202,6 +203,51 @@ These values are added to the embedded tokens before they enter the Transformer 
 
 
 
+## Running Benchmarks
+
+After training, evaluate model performance across different time-series patterns:
+
+1. **Generate Benchmark Data**
+   ```bash
+   python benchmarks/generate_benchmark_data.py --output-dir benchmark_data --samples 100
+   ```
+
+2. **Run Benchmark**
+   ```bash
+   # Using the benchmark script
+   bash scripts/benchmark.sh
+
+   # Or run directly
+   python benchmarks/run_benchmark.py \
+     --model-path path/to/model.pt \
+     --benchmark-dir benchmark_data \
+     --output results.json
+   ```
+
+   Results include accuracy, MAE, RMSE, and direction accuracy across patterns like trends, seasonality, and noise.
+
+### Performance
+
+| Pattern | Accuracy | MAE | RMSE | Cross Entropy | Direction Acc | Median Err | P90 Err | P95 Err |
+|---------|----------|-----|------|---------------|---------------|------------|---------|---------|
+| Flat line (all values identical) | **100.0%** | **0.000** | **0.000** | **0.092** | **100.0%** | 0.0 | 0.0 | 0.0 |
+| Clear upward linear trend | 69.8% | 0.302 | 0.549 | 0.602 | 70.1% | 0.0 | 1.0 | 1.0 |
+| Upward trend with periodic component | 69.5% | 0.305 | 0.552 | 0.626 | 69.4% | 0.0 | 1.0 | 1.0 |
+| Clear downward linear trend | 68.1% | 0.319 | 0.565 | 0.619 | 68.6% | 0.0 | 1.0 | 1.0 |
+| Very clean signal with minimal noise | 67.1% | 0.329 | 0.574 | 0.646 | 67.5% | 0.0 | 1.0 | 1.0 |
+| All components: trend + cycle + noise + drift | 50.9% | 0.532 | 0.784 | 1.127 | 55.9% | 0.0 | 1.0 | 1.0 |
+| Drift-dominated movement (like random walk) | 44.9% | 0.632 | 0.894 | 1.290 | 52.7% | 1.0 | 1.0 | 2.0 |
+| Trend partially obscured by noise | 31.2% | 0.971 | 1.288 | 1.676 | 45.8% | 1.0 | 2.0 | 2.0 |
+| Slow periodic oscillation (1 cycle) | 22.7% | 1.552 | 2.120 | 2.097 | 37.9% | 1.0 | 3.0 | 4.0 |
+| Stationary series with no trend | 20.9% | 2.885 | 5.734 | 2.316 | 44.0% | 1.0 | 7.0 | 11.0 |
+| Strong signal buried in heavy noise | 12.6% | 2.534 | 3.219 | 2.576 | 42.2% | 2.0 | 5.0 | 6.0 |
+| Subtle periodic pattern | 11.1% | 4.082 | 6.272 | 2.864 | 41.7% | 3.0 | 10.0 | 14.0 |
+| Fast periodic oscillation (8 cycles) | 6.0% | 4.485 | 5.727 | 3.325 | 17.3% | 4.0 | 8.0 | 10.0 |
+| Pure random noise (no signal) | 3.3% | 11.327 | 14.917 | 4.042 | 37.5% | 9.0 | 24.0 | 31.0 |
+
+**Aggregate Statistics**: Mean Accuracy: 41.3% ± 29.1% | Mean MAE: 2.16 ± 2.91 | Total Predictions per Pattern: 32,512
+
+
 ## Running Unit Tests
 
 We have unit tests in the `tests/` folder (for example, `test_data.py`, `test_model.py`, `test_train.py`) that validate:
@@ -234,5 +280,20 @@ The following things are under development.
 - [ ] Add MSE metric, and monitor during training
 - [ ] Add tracking of gradient norms, dead neurons and 0 gradients during training
 - [ ] Add support for gradient accumulation across mini-batches (to increase the effective batch size)
-- [ ] Create an auto-restart system that can restart training from the latest optimizer, lr global step checkpoint. Also append to same WandB run 
+- [ ] Create an auto-restart system that can restart training from the latest optimizer, lr global step checkpoint. Also append to same WandB run
 - [ ] Save all training and gpu logs in the base directory of the experiment
+
+
+## Citation
+
+If you use this code in your research, please cite:
+
+```bibtex
+@software{time_series_fms,
+  title = {Foundation Models for Time Series Forecasting},
+  author = {Doshi, Pratik},
+  year = {2026},
+  url = {https://github.com/pratikdoshi/time-series-fms},
+  note = {A decoder-only Transformer for quantized time-series forecasting}
+}
+```

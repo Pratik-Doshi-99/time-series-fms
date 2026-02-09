@@ -2,7 +2,7 @@
 # Training script with file-based logging and GPU monitoring
 
 # Setup
-PROJECT_DIR="/home/pratikdoshi/projects/time-series-fms"
+PROJECT_DIR="/home/pratikdoshi/projects/time-series/time-series-fms"
 LOG_DIR="$PROJECT_DIR/logs"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RUN_LOG="$LOG_DIR/training_${TIMESTAMP}.log"
@@ -69,11 +69,9 @@ python -u main.py \
     --train_dir synth-data-train \
     --val_dir synth-data-val \
     --device "cuda:0" \
-    --run_name "TSFM-RunABCD-Step2000Onwards" \
-    --base_dir "TSFM-4L-256Model-1024Hidden" \
+    --run_name "TSFM-Run-ArchFix" \
+    --base_dir "TSFM-ArchFix" \
     --autoreg_expansion_factor 1023 \
-    --pretrained_model "TSFM-4L-256Model-1024Hidden/tsfm_2000.pt" \
-    --start_global_step 2000 \
     >> "$RUN_LOG" 2>&1
 
 # Training finished
